@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DXF Viewer - Professional CAD Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="file-upload-container">
+                    <label for="file-input" class="file-open-btn" title="Open DXF File" data-i18n-title="openFile">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                                stroke-width="2" />
+                        </svg>
+                    </label>
+                    <input type="file" id="file-input" accept=".dxf" hidden>
+                    <span id="file-name" class="file-name" data-i18n="noFileSelected">No file selected</span>
+                </div>
+            </div>
+
+            <div class="header-center">
+                <div class="header-tools">
+                    <button class="icon-btn tool-btn" data-tool="distance" title="Measure Distance"
+                        data-i18n-title="measureDistance">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M1 3 V21" stroke-width="2" />
+                            <path d="M23 3 V21" stroke-width="2" />
+                            <!-- Left arrow -->
+                            <path d="M8 8 L3 12 L8 16" stroke-width="2" />
+                            <!-- Right arrow -->
+                            <path d="M16 8 L21 12 L16 16" stroke-width="2" />
+                            <!-- Horizontal line -->
+                            <path d="M3 12 H21" stroke-width="2" />
+                        </svg>
+                    </button>
+                    <button class="icon-btn tool-btn" data-tool="angle" title="Measure Angle"
+                        data-i18n-title="measureAngle">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M18 3 L3 22 L22 22" stroke-width="2" />
+                            <path d="M9 14 A5 5 30 0 1 12 22" stroke-width="2" fill="none" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Layers Dropdown -->
+                <div class="relative layers-dropdown ml-2 border-l border-white/10 pl-2">
+                    <button id="layers-toggle" class="icon-btn tool-btn" title="Layers" data-i18n-title="layers">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-width="2" />
+                        </svg>
+                    </button>
+                    <div id="layers-menu"
+                        class="settings-menu hidden absolute top-full left-1/2 -translate-x-1/2 mt-2 p-4 rounded-xl bg-gray-900/95 backdrop-blur-xl border border-white/10 shadow-2xl min-w-[240px]"
+                        style="z-index: 1000;">
+                        <h3 class="text-sm font-semibold mb-3 text-white">Layers</h3>
+                        <div id="layers-panel" class="space-y-2 scrollable-panel" style="max-height: 300px;">
+                            <p class="empty-state">No layers available</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="header-right flex items-center gap-3">
+                <div class="relative group" id="zoom-dropdown-container">
+                    <button class="icon-btn tool-btn" id="zoom-menu-btn" title="Zoom Tools"
+                        data-i18n-title="zoomExtents">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </button>
+                    <!-- Dropdown Menu -->
+                    <div class="hidden absolute top-full left-0 mt-2 p-1.5 rounded-xl bg-gray-900/95 backdrop-blur-xl border border-white/10 shadow-2xl min-w-[160px] flex flex-col gap-1 z-50"
+                        id="zoom-dropdown-menu">
+
+                        <!-- Zoom Extents -->
+                        <button
+                            class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                            id="zoom-extents-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                            </svg>
+                            <span class="text-sm font-medium text-white" data-i18n="zoomExtents">Fit View</span>
+                        </button>
+
+                        <!-- Zoom Window -->
+                        <button
+                            class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                            id="zoom-window-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                <rect x="8" y="8" width="6" height="6" stroke-dasharray="2 2" stroke-width="1"></rect>
+                            </svg>
+                            <span class="text-sm font-medium text-white" data-i18n="zoomWindow">Zoom Window</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Settings Dropdown -->
+                <div class="relative settings-dropdown">
+                    <button id="settings-toggle" class="icon-btn tool-btn" title="Settings" data-i18n-title="settings">
+                        <svg width="32px" height="32px" viewBox="0 0 32 32" fill="none" stroke="currentColor">
+                            <path
+                                d="M 17.675781 3.25 C 17.179688 1.582031 14.820312 1.582031 14.324219 3.25 L 14.136719 3.886719 C 13.550781 5.867188 11.46875 7.007812 9.488281 6.417969 C 9.230469 6.34375 8.988281 6.242188 8.757812 6.113281 L 8.175781 5.792969 C 6.644531 4.960938 4.976562 6.636719 5.804688 8.164062 L 6.125 8.742188 C 7.113281 10.5625 6.445312 12.835938 4.625 13.824219 C 4.394531 13.949219 4.148438 14.050781 3.894531 14.132812 L 3.257812 14.320312 C 1.585938 14.8125 1.585938 17.175781 3.257812 17.667969 L 3.894531 17.855469 C 5.882812 18.445312 7.011719 20.523438 6.425781 22.507812 C 6.351562 22.761719 6.25 23.007812 6.117188 23.238281 L 5.800781 23.820312 C 4.96875 25.351562 6.644531 27.019531 8.167969 26.1875 L 8.75 25.867188 C 10.570312 24.882812 12.84375 25.550781 13.832031 27.367188 C 13.957031 27.601562 14.0625 27.84375 14.136719 28.101562 L 14.324219 28.738281 C 14.820312 30.40625 17.179688 30.40625 17.675781 28.738281 L 17.863281 28.101562 C 18.449219 26.113281 20.53125 24.980469 22.511719 25.570312 C 22.769531 25.644531 23.011719 25.742188 23.242188 25.875 L 23.824219 26.195312 C 25.355469 27.023438 27.023438 25.351562 26.195312 23.824219 L 25.875 23.242188 C 24.886719 21.425781 25.554688 19.148438 27.375 18.164062 C 27.605469 18.039062 27.855469 17.929688 28.113281 17.855469 L 28.75 17.667969 C 30.417969 17.175781 30.417969 14.8125 28.75 14.320312 L 28.113281 14.132812 C 26.132812 13.542969 24.992188 11.460938 25.582031 9.480469 C 25.65625 9.226562 25.757812 8.980469 25.886719 8.75 L 26.207031 8.167969 C 27.039062 6.636719 25.363281 4.96875 23.835938 5.800781 L 23.257812 6.117188 C 21.445312 7.113281 19.164062 6.445312 18.175781 4.625 C 18.050781 4.386719 17.945312 4.144531 17.867188 3.886719 Z M 12.40625 2.6875 C 13.460938 -0.894531 18.539062 -0.894531 19.59375 2.6875 L 19.78125 3.324219 C 20.054688 4.25 21.023438 4.78125 21.949219 4.507812 L 22.292969 4.363281 L 22.875 4.042969 C 26.15625 2.261719 29.742188 5.84375 27.957031 9.125 L 27.636719 9.707031 C 27.175781 10.554688 27.488281 11.613281 28.335938 12.074219 L 28.679688 12.21875 L 29.320312 12.40625 C 32.898438 13.460938 32.898438 18.539062 29.320312 19.59375 L 28.679688 19.78125 C 27.757812 20.054688 27.226562 21.023438 27.5 21.949219 L 27.644531 22.292969 L 27.960938 22.875 C 29.75 26.15625 26.15625 29.742188 22.882812 27.957031 L 22.300781 27.636719 C 21.449219 27.175781 20.394531 27.488281 19.929688 28.335938 L 19.789062 28.679688 L 19.601562 29.320312 C 18.542969 32.898438 13.46875 32.898438 12.414062 29.320312 L 12.226562 28.679688 C 11.949219 27.757812 10.980469 27.226562 10.054688 27.5 L 9.710938 27.644531 L 9.132812 27.960938 C 5.84375 29.742188 2.261719 26.148438 4.042969 22.875 L 4.363281 22.292969 C 4.824219 21.445312 4.511719 20.386719 3.664062 19.925781 L 3.320312 19.78125 L 2.679688 19.59375 C -0.898438 18.539062 -0.898438 13.460938 2.679688 12.40625 L 3.320312 12.21875 C 4.242188 11.945312 4.773438 10.976562 4.5 10.050781 L 4.355469 9.707031 L 4.039062 9.125 C 2.261719 5.84375 5.851562 2.261719 9.125 4.042969 L 9.707031 4.363281 C 10.554688 4.824219 11.613281 4.511719 12.074219 3.664062 L 12.21875 3.320312 Z M 12.40625 2.6875 " />
+                            <circle cx="16" cy="16" r="3" />
+                        </svg>
+                    </button>
+                    <div id="settings-menu"
+                        class="settings-menu hidden absolute top-full right-0 mt-2 p-4 rounded-xl bg-gray-900/95 backdrop-blur-xl border border-white/10 shadow-2xl min-w-[280px]">
+                        <h3 class="text-sm font-semibold mb-3 text-white" data-i18n="settings">Settings</h3>
+                        <div class="space-y-3">
+                            <div class="setting-item">
+                                <label for="bg-color" class="text-xs text-gray-400"
+                                    data-i18n="background">Background</label>
+                                <select id="bg-color"
+                                    class="w-full mt-1 px-3 py-2 bg-black/30 border border-white/10 rounded-lg text-sm text-white">
+                                    <option value="#1a1a1a" selected>Dark</option>
+                                    <option value="#ffffff">Light</option>
+                                    <option value="#2d2d2d">Charcoal</option>
+                                    <option value="#f5f5f5">Off-White</option>
+                                </select>
+                            </div>
+                            <div class="setting-item">
+                                <label for="linetype-scale" class="text-xs text-gray-400"
+                                    data-i18n="linetypeScale">Linetype Scale</label>
+                                <input type="range" id="linetype-scale" min="0.1" max="5" step="0.1" value="1"
+                                    class="w-full mt-1">
+                                <span id="linetype-scale-value" class="text-xs text-cyan-400 font-semibold">1.0</span>
+                            </div>
+                            <div class="setting-item">
+                                <label for="snap-tolerance" class="text-xs text-gray-400" data-i18n="snapTolerance">Snap
+                                    Tolerance</label>
+                                <input type="range" id="snap-tolerance" min="5" max="30" step="1" value="15"
+                                    class="w-full mt-1">
+                                <span id="snap-tolerance-value" class="text-xs text-cyan-400 font-semibold">15px</span>
+                            </div>
+                            <div class="setting-item">
+                                <label for="measurement-color" class="text-xs text-gray-400"
+                                    data-i18n="measurementColor">Measurement Color</label>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <input type="color" id="measurement-color" value="#32a852"
+                                        class="w-8 h-8 rounded cursor-pointer border-none bg-transparent p-0">
+                                    <span id="measurement-color-value"
+                                        class="text-xs text-cyan-400 font-semibold">#32a852</span>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-400">
+                                    <input type="checkbox" id="multi-select-toggle"
+                                        class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                    <span data-i18n="multiSelect">Multi-Select</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="language-selector-container" class="relative"></div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-header flex justify-between items-center mb-4 px-1">
+                    <h3 class="text-sm font-semibold text-white">Sidebar</h3>
+                    <button id="sidebar-close-btn"
+                        class="p-1 rounded-md hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                        title="Close Sidebar" data-i18n-title="closeSidebar">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M18 6L6 18M6 6l12 12" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                </div>
+                <!-- Layers moved to Header -->
+
+                <!-- Object Info / Measurement Panel -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M17 3l4 4L7 21l-4-4L17 3z" stroke-width="2" />
+                        </svg>
+                        <h3 data-i18n="objectInfo">Object Info</h3>
+                    </div>
+                    <div class="panel-content" id="measurement-panel">
+                        <!-- Tools moved to header -->
+                        <div id="measurement-result" class="measurement-result">
+                            <p class="empty-state" data-i18n="clickObjectInfo">Click an object to view info</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Entity Tree Panel -->
+                <div class="panel flex-1 min-h-0 flex flex-col mt-4">
+                    <div class="panel-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path
+                                d="M7 21h10a2 2 0 0 0 2-2V9.414a1 1 0 0 0-.293-.707l-5.414-5.414A1 1 0 0 0 12.586 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"
+                                stroke-width="2" />
+                            <path d="M12 11h4" stroke-width="2" />
+                            <path d="M12 16h4" stroke-width="2" />
+                            <path d="M8 11h.01" stroke-width="3" stroke-linecap="round" />
+                            <path d="M8 16h.01" stroke-width="3" stroke-linecap="round" />
+                        </svg>
+                        <h3 data-i18n="entityTree">Entity Tree</h3>
+                    </div>
+                    <div class="panel-content flex-1 overflow-y-auto" id="entity-tree-content">
+                        <div class="p-4 text-center text-gray-400 text-sm" data-i18n="noEntities">
+                            No entities loaded
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Viewport -->
+            <main class="viewport-container" id="viewport-container">
+                <button id="sidebar-floating-toggle"
+                    class="absolute top-4 left-4 z-50 p-2 rounded-lg bg-gray-900/90 border border-white/10 text-white shadow-lg hover:bg-gray-800 transition-all hidden"
+                    title="Show Sidebar" data-i18n-title="showSidebar">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M4 6h16M4 12h16m-7 6h7" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                </button>
+                <canvas id="viewport" class="viewport-canvas"></canvas>
+                <div class="overlay-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M3 3h18v18H3z M3 9h18 M9 3v18" stroke-width="2" />
+                    </svg>
+                    <h1 data-i18n="appTitle">DXF Viewer</h1>
+                </div>
+                <div class="viewport-overlay" id="viewport-overlay">
+                    <div class="help-text">
+                        <p data-i18n="helpPan">🖱️ <strong>Pan:</strong> Click and drag</p>
+                        <p data-i18n="helpZoom">🔍 <strong>Zoom:</strong> Mouse wheel</p>
+                        <p data-i18n="helpLoad">📁 <strong>Load:</strong> Click "Open DXF File" above</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Footer with OSNAP Dropdown -->
+        <footer class="footer">
+            <div class="footer-left">
+                <span id="cursor-coords" class="coords">X: 0.000 | Y: 0.000</span>
+            </div>
+            <div class="footer-center">
+                <span id="status-text" class="status" data-i18n="ready">Ready</span>
+            </div>
+            <div class="footer-right flex items-center gap-4">
+                <!-- OSNAP Dropdown -->
+                <div class="relative osnap-dropdown">
+                    <button id="osnap-toggle"
+                        class="osnap-toggle-btn flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/10"
+                        title="OSNAP" data-title-i18n="osnap">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <circle cx="12" cy="12" r="10" stroke-width="2" />
+                            <circle cx="12" cy="12" r="3" fill="currentColor" />
+                        </svg>
+                        <span class="text-sm font-medium" data-i18n="osnap">OSNAP</span>
+                        <svg class="w-3 h-3 transition-transform" id="osnap-chevron" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor">
+                            <path d="M18 15l-6-6-6 6" stroke-width="2" />
+                        </svg>
+                    </button>
+                    <div id="osnap-menu"
+                        class="osnap-menu hidden absolute bottom-full right-0 mb-2 p-3 rounded-xl bg-gray-900/95 backdrop-blur-xl border border-white/10 shadow-2xl">
+                        <div class="grid grid-cols-2 gap-2 min-w-[280px]">
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="endpoint" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">□</span>
+                                <span class="text-sm" data-i18n="endpoint">Endpoint</span>
+                            </label>
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="midpoint" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">◇</span>
+                                <span class="text-sm" data-i18n="midpoint">Midpoint</span>
+                            </label>
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="center" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">○</span>
+                                <span class="text-sm" data-i18n="center">Center</span>
+                            </label>
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="quadrant" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">⊕</span>
+                                <span class="text-sm" data-i18n="quadrant">Quadrant</span>
+                            </label>
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="intersection" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">✕</span>
+                                <span class="text-sm" data-i18n="intersection">Intersection</span>
+                            </label>
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="perpendicular" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">⊥</span>
+                                <span class="text-sm" data-i18n="perpendicular">Perpendicular</span>
+                            </label>
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="nearest" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">▪</span>
+                                <span class="text-sm" data-i18n="nearest">Nearest</span>
+                            </label>
+                            <label
+                                class="osnap-menu-item flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
+                                <input type="checkbox" data-snap="node" checked
+                                    class="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-blue-500">
+                                <span class="osnap-icon text-lg">●</span>
+                                <span class="text-sm" data-i18n="node">Node</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <span id="zoom-level" class="zoom"><span data-i18n="zoom">Zoom</span>: 100%</span>
+            </div>
+        </footer>
+    </div>
+
+    <script type="module" src="src/app.js?v=2.0"></script>
+</body>
+
+</html>
