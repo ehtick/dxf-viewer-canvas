@@ -806,3 +806,23 @@ body {
     font-family: var(--font-family);
     letter-spacing: -0.5px;
 }
+
+/* Selection Box */
+.selection-box {
+    position: absolute;
+    border: 1px solid;
+    background-color: rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    z-index: 1000;
+}
+
+.selection-box.window {
+    border-color: #00d9ff;
+    background-color: rgba(0, 217, 255, 0.1);
+}
+
+.selection-box.crossing {
+    border-color: #10b981;
+    background-color: rgba(16, 185, 129, 0.1);
+    border-style: dashed;
+}

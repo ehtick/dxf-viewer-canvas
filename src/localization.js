@@ -61,6 +61,9 @@ export const translations = {
         "horizontal": "Yatay",
         "vertical": "Dikey",
         "area": "Alan",
+        "circumference": "Çevre",
+        "totalLength": "Toplam Uzunluk",
+        "dimensionValue": "Ölçü Değeri",
         "profileArea": "Seçim Alanı ({count} boşaltma)",
         "weight": "Gramaj",
 
@@ -174,7 +177,10 @@ export const translations = {
         "horizontal": "Horizontal",
         "vertical": "Vertical",
         "area": "Area",
-        "profileArea": "Section Area ({count} cavities)",
+        "circumference": "Circumference",
+        "totalLength": "Total Length",
+        "dimensionValue": "Dimension Value",
+        "profileArea": "Section Area ({count} cav.)",
         "weight": "Weight",
 
         // Settings
@@ -228,7 +234,17 @@ export const translations = {
         "zoomMenu": "Zoom Tools",
         "zoomExtents": "Zoom Extents",
         "zoomWindow": "Zoom Window",
-        "instrZoomWindow": "Draw a window to zoom"
+        "instrZoomWindow": "Draw a window to zoom",
+
+        // Weight Calculation
+        "weightTitle": "Weight Calculation",
+        "weightBtn": "Calculate Weight",
+        "material": "Material",
+        "mandrel": "Zıvana (Mandrel)",
+        "area": "Net Area",
+        "weight": "Weight (Gramaj)",
+        "unitMm2": "mm²",
+        "unitKgM": "kg/m"
     }
 };
 

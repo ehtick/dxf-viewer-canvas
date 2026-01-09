@@ -1214,26 +1214,16 @@ export class Renderer {
         this.ctx.textBaseline = 'middle';
 
         // Calculate correct mid-angle for text placement
-        // Handle wrap-around cases correctly
+        // Since we draw with anticlockwise = true (decreasing angle from start to end in screen coords),
+        // we must ensure diff is negative (or zero).
         let diff = end - start;
-        while (diff <= 0) diff += 2 * Math.PI;
-        while (diff > 2 * Math.PI) diff -= 2 * Math.PI;
+        while (diff > 0) diff -= 2 * Math.PI;
+        while (diff < -2 * Math.PI) diff += 2 * Math.PI;
 
         const effectiveStart = start;
         let midAngle = effectiveStart + diff / 2;
 
-        // Fix for text appearing on opposite side (180 deg flip)
-        // If the diff is large (reflex), or based on user feedback "opposite side", 
-        // we might simply need to flip it if it looks wrong.
-        // But "swap them" usually means it's 180 deg off.
-        // Let's invert the text position logic relative to the center IF it seems to be the reflex.
-        // Actually, if the user says "opposite side of measurement arc", 
-        // and the ARC is correct, then the text logic is misaligned with the ARC logic.
-        // Let's assume we need to flip it 180 degrees to match the arc if the arc is > 180?
-        // No, simplest Interpretation: Add 180 degrees.
-        midAngle += Math.PI;
-
-        midAngle += Math.PI;
+        // Removed redundant midAngle += Math.PI lines
 
         const textRadius = radius + (scaledSize * 1.5);
         const textPos = {
