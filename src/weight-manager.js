@@ -210,32 +210,91 @@ export class WeightManager {
 
         console.log(`[calculateBoundingCircleFromMesh] Using ${points.length} tessellated vertices`);
 
-        // Calculate bounding box
-        let minX = Infinity, maxX = -Infinity;
-        let minY = Infinity, maxY = -Infinity;
+        // Use Welzl's algorithm for minimum enclosing circle
+        const result = this.minimumEnclosingCircle(points);
 
-        for (const p of points) {
-            minX = Math.min(minX, p.x);
-            maxX = Math.max(maxX, p.x);
-            minY = Math.min(minY, p.y);
-            maxY = Math.max(maxY, p.y);
+        return {
+            diameter: result.diameter,
+            center: { x: result.center.x, y: result.center.y },
+            radius: result.radius
+        };
+    }
+
+    // Welzl's algorithm for minimum enclosing circle
+    minimumEnclosingCircle(points) {
+        // Fisher–Yates shuffle (required for Welzl)
+        const pts = points.slice();
+        for (let i = pts.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pts[i], pts[j]] = [pts[j], pts[i]];
         }
 
-        // Center is bounding box center
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
+        let c = null;
 
-        // Radius is max distance from center to any vertex
-        let radius = 0;
-        for (const p of points) {
-            const dist = Math.hypot(p.x - centerX, p.y - centerY);
-            radius = Math.max(radius, dist);
+        for (let i = 0; i < pts.length; i++) {
+            if (c && this.circleContains(c, pts[i])) continue;
+
+            c = { center: pts[i], radius: 0 };
+
+            for (let j = 0; j < i; j++) {
+                if (this.circleContains(c, pts[j])) continue;
+
+                c = this.circleFrom2Points(pts[i], pts[j]);
+
+                for (let k = 0; k < j; k++) {
+                    if (this.circleContains(c, pts[k])) continue;
+                    c = this.circleFrom3Points(pts[i], pts[j], pts[k]);
+                }
+            }
         }
 
         return {
-            diameter: radius * 2,
-            center: { x: centerX, y: centerY },
-            radius: radius
+            center: { x: c.center.x, y: c.center.y },
+            radius: c.radius,
+            diameter: c.radius * 2
+        };
+    }
+
+    circleContains(c, p) {
+        return Math.hypot(p.x - c.center.x, p.y - c.center.y) <= c.radius + 1e-6;
+    }
+
+    circleFrom2Points(a, b) {
+        const cx = (a.x + b.x) / 2;
+        const cy = (a.y + b.y) / 2;
+        return {
+            center: { x: cx, y: cy },
+            radius: Math.hypot(a.x - cx, a.y - cy)
+        };
+    }
+
+    circleFrom3Points(a, b, c) {
+        const d = 2 * (
+            a.x * (b.y - c.y) +
+            b.x * (c.y - a.y) +
+            c.x * (a.y - b.y)
+        );
+
+        if (Math.abs(d) < 1e-12) {
+            // Points are collinear, use circle from 2 points
+            return this.circleFrom2Points(a, b);
+        }
+
+        const ux = (
+            (a.x * a.x + a.y * a.y) * (b.y - c.y) +
+            (b.x * b.x + b.y * b.y) * (c.y - a.y) +
+            (c.x * c.x + c.y * c.y) * (a.y - b.y)
+        ) / d;
+
+        const uy = (
+            (a.x * a.x + a.y * a.y) * (c.x - b.x) +
+            (b.x * b.x + b.y * b.y) * (a.x - c.x) +
+            (c.x * c.x + c.y * c.y) * (b.x - a.x)
+        ) / d;
+
+        return {
+            center: { x: ux, y: uy },
+            radius: Math.hypot(a.x - ux, a.y - uy)
         };
     }
 

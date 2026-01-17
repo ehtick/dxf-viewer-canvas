@@ -118,7 +118,17 @@ export const translations = {
         "zoomMenu": "Yakınlaştırma Araçları",
         "zoomExtents": "Sığdır",
         "zoomWindow": "Pencere",
-        "instrZoomWindow": "Yakınlaştırmak için pencere çizin"
+        "instrZoomWindow": "Yakınlaştırmak için pencere çizin",
+
+        // Weight Calculation
+        "weightTitle": "Metre Gramaj Hesabı",
+        "weightBtn": "Gramaj Hesapla",
+        "material": "Malzeme",
+        "mandrel": "Zıvana",
+        "area": "Net Alan",
+        "weight": "Gramaj",
+        "unitMm2": "mm²",
+        "unitKgM": "kg/m"
     },
     en: {
         // Header / File
@@ -240,7 +250,7 @@ export const translations = {
         "weightTitle": "Weight Calculation",
         "weightBtn": "Calculate Weight",
         "material": "Material",
-        "mandrel": "Zıvana (Mandrel)",
+        "mandrel": "Mandrel",
         "area": "Net Area",
         "weight": "Weight (Gramaj)",
         "unitMm2": "mm²",
