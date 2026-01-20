@@ -680,12 +680,50 @@ export class WeightManager {
 
                 // Replace %placeholder% patterns
                 let replaced = false;
+
+                // 1. Standard Placeholders (val-area, val-weight, etc.)
                 for (const [key, value] of Object.entries(values)) {
                     const pattern = new RegExp(`%${key}%`, 'gi');
                     if (pattern.test(text)) {
                         text = text.replace(pattern, value);
                         replaced = true;
                     }
+                }
+
+                // 2. Calculated PxF Placeholders (%5x1%, %10x6% etc.)
+                // Formula: (Area / P_Value) / F -> Integer
+                const P_CONSTANTS = {
+                    '5': 13893,
+                    '6': 19600,
+                    '8': 34612,
+                    '10': 53100
+                };
+
+                // Regex to find %NxM% where N is one of P keys and M is 1-9
+                // capturing group 1: P (5, 6, 8, 10)
+                // capturing group 2: F (1, 2, 3...)
+                const pxfPattern = /%(\d+)x(\d+)%/g;
+
+                if (pxfPattern.test(text)) {
+                    const areaVal = parseFloat(values['val-area']); // "123.45" -> 123.45
+
+                    text = text.replace(pxfPattern, (match, pKey, fKey) => {
+                        const pVal = P_CONSTANTS[pKey];
+                        const fVal = parseInt(fKey, 10);
+
+                        if (pVal && !isNaN(fVal) && fVal > 0 && !isNaN(areaVal)) {
+                            // Calculation: (Area / P) / F
+                            // Example: Area=100000, P=13893 (for 5), F=1 => 7.19 => 7
+                            // User requested Math.round() instead of Math.floor()
+                            const result = Math.round((areaVal / pVal) / fVal);
+                            replaced = true;
+                            // Return integer as string
+                            return result.toString();
+                        }
+
+                        // If invalid P or calculation fails, return original match (leave placeholder)
+                        return match;
+                    });
                 }
 
                 if (replaced) {
