@@ -5,6 +5,9 @@ node_modules/
 tmp/
 dist/
 .DS_Store
+.# CAD/AutoCAD
+*.bak
+*.dwl
+*.dwl2
 *.dxf
 *.dwg
-
