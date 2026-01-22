@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { MATERIALS, DEFAULT_MATERIAL_ID } from './materials.js';
 
 export class WeightManager {
-    constructor(viewer, languageManager, snappingManager, onCloseCallback) {
+    constructor(viewer, languageManager, snappingManager, onCloseCallback, onChainSelectCallback) {
         this.viewer = viewer;
         this.languageManager = languageManager;
         this.snappingManager = snappingManager;
         this.onCloseCallback = onCloseCallback;
+        this.onChainSelectCallback = onChainSelectCallback;
 
         this.currentMaterialId = DEFAULT_MATERIAL_ID;
         this.selectedObjects = [];
@@ -64,8 +65,9 @@ export class WeightManager {
         if (this.btn) {
             this.btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (this.isEnabled) {
-                    this.togglePanel();
+
+                if (this.onChainSelectCallback && this.selectedObjects.length > 0) {
+                    this.onChainSelectCallback(this.selectedObjects);
                 }
             });
         }
@@ -110,7 +112,8 @@ export class WeightManager {
         this.selectedObjects = selectedObjects || [];
 
         const closedGeoms = this.filterClosedGeometries(this.selectedObjects);
-        this.isEnabled = closedGeoms.length > 0;
+        // Enable button if there is ANY selection (to allow Chain Select)
+        this.isEnabled = this.selectedObjects.length > 0;
 
         // Update button state
         if (this.btn) {
@@ -125,7 +128,7 @@ export class WeightManager {
 
         // Show/hide weight panel based on whether closed geometries are selected
         if (this.panel) {
-            if (this.isEnabled) {
+            if (closedGeoms.length > 0) {
                 this.panel.classList.remove('hidden');
                 this.calculateAndRender();
             } else {
@@ -1989,7 +1992,7 @@ export class WeightManager {
 
     // Find all disconnected closed chains from a set of objects
     findAllChains(objects) {
-        const tolerance = 2.0;  // Increased for small arc matching
+        const tolerance = 0.001; // Strict tolerance for exact endpoint matching
         const results = [];
 
         // Extract all segments
@@ -2014,11 +2017,22 @@ export class WeightManager {
                 console.log(`  - Found closed chain with ${chain.orderedSegments.length} segments`);
 
                 // Extract vertices
-                const vertices = chain.orderedSegments.map(seg => ({
-                    x: seg.p1.x,
-                    y: seg.p1.y,
-                    bulge: seg.bulge || 0
-                }));
+                // Extract vertices
+                const vertices = [];
+                chain.orderedSegments.forEach(seg => {
+                    if (seg.tessellatedVertices && seg.tessellatedVertices.length > 1) {
+                        // For tessellated segments, add all points except the last one (overlapping)
+                        for (let k = 0; k < seg.tessellatedVertices.length - 1; k++) {
+                            vertices.push(seg.tessellatedVertices[k]);
+                        }
+                    } else {
+                        vertices.push({
+                            x: seg.p1.x,
+                            y: seg.p1.y,
+                            bulge: seg.bulge || 0
+                        });
+                    }
+                });
 
                 results.push({
                     type: 'chain',
@@ -2053,11 +2067,10 @@ export class WeightManager {
         // Try to build a chain
         while (found && ordered.length < allSegments.length) {
             found = false;
-            let bestIdx = -1;
-            let bestDist = tolerance;
-            let bestFlip = false;
 
-            // Find the CLOSEST matching segment, not just the first one
+            // Find all candidates within tolerance
+            const candidates = [];
+
             for (let i = 0; i < allSegments.length; i++) {
                 if (allSegments[i].used) continue;
 
@@ -2065,37 +2078,78 @@ export class WeightManager {
                 const dist1 = currentEnd.distanceTo(seg.p1);
                 const dist2 = currentEnd.distanceTo(seg.p2);
 
-                if (dist1 < bestDist) {
-                    bestDist = dist1;
-                    bestIdx = i;
-                    bestFlip = false;
+                if (dist1 < tolerance) {
+                    candidates.push({ idx: i, seg: seg, dist: dist1, flip: false });
                 }
-                if (dist2 < bestDist) {
-                    bestDist = dist2;
-                    bestIdx = i;
-                    bestFlip = true;
+                if (dist2 < tolerance) {
+                    candidates.push({ idx: i, seg: seg, dist: dist2, flip: true });
                 }
             }
 
-            // Add the best matching segment if found
-            if (bestIdx !== -1) {
-                const seg = allSegments[bestIdx];
+            if (candidates.length > 0) {
+                // Score candidates to find the best match
+                // Priority 1: Distance (closest)
+                // Priority 2: Layer Match (same layer)
+                // Priority 3: Angle/Direction (most continuous)
+
+                const currentLayer = segment.object.userData.layer;
+                const currentVector = segment.p2.clone().sub(segment.p1).normalize(); // Direction of current segment
+
+                candidates.forEach(cand => {
+                    let score = 0;
+
+                    // 1. Distance penalty (heavy)
+                    score -= cand.dist * 1000;
+
+                    // 2. Layer bonus
+                    const candLayer = cand.seg.object.userData.layer;
+                    if (candLayer === currentLayer) {
+                        score += 10;
+                    }
+
+                    // 3. Angle bonus (dot product)
+                    // Check direction of candidate (account for flip)
+                    let candVector;
+                    if (cand.flip) {
+                        // connecting to p2, so flow is p2 -> p1
+                        candVector = cand.seg.p1.clone().sub(cand.seg.p2).normalize();
+                    } else {
+                        // connecting to p1, so flow is p1 -> p2
+                        candVector = cand.seg.p2.clone().sub(cand.seg.p1).normalize();
+                    }
+
+                    const dot = currentVector.dot(candVector);
+                    // Dot: 1 = straight, 0 = 90deg, -1 = u-turn
+                    // We prefer straight (higher dot)
+                    score += dot * 5;
+
+                    cand.score = score;
+                });
+
+                // Sort by score descending
+                candidates.sort((a, b) => b.score - a.score);
+
+                // Pick best
+                const best = candidates[0];
+                const bestSeg = best.seg;
+
                 found = true;
 
-                if (!bestFlip) {
-                    ordered.push(seg);
-                    allSegments[bestIdx].used = true;
-                    currentEnd = seg.p2;
+                if (!best.flip) {
+                    ordered.push(bestSeg);
+                    allSegments[best.idx].used = true;
+                    currentEnd = bestSeg.p2;
                 } else {
                     const flipped = {
-                        object: seg.object,
-                        p1: seg.p2,
-                        p2: seg.p1,
-                        bulge: seg.bulge ? -seg.bulge : 0,
+                        object: bestSeg.object,
+                        p1: bestSeg.p2, // Swapped
+                        p2: bestSeg.p1, // Swapped
+                        bulge: bestSeg.bulge ? -bestSeg.bulge : 0,
+                        tessellatedVertices: bestSeg.tessellatedVertices ? bestSeg.tessellatedVertices.slice().reverse() : undefined,
                         used: true
                     };
                     ordered.push(flipped);
-                    allSegments[bestIdx].used = true;
+                    allSegments[best.idx].used = true;
                     currentEnd = flipped.p2;
                 }
             }
@@ -2196,73 +2250,85 @@ export class WeightManager {
     extractSegment(obj) {
         const type = obj.userData.type;
 
+        // Try to get detailed entity data first
         if (type === 'LINE') {
             const entity = obj.userData.entity;
-            if (!entity || !entity.startPoint || !entity.endPoint) {
-                console.warn('[extractSegment] LINE missing entity data');
-                return null;
+            if (entity && entity.startPoint && entity.endPoint) {
+                return {
+                    object: obj,
+                    p1: new THREE.Vector2(entity.startPoint.x, entity.startPoint.y),
+                    p2: new THREE.Vector2(entity.endPoint.x, entity.endPoint.y),
+                    bulge: 0
+                };
             }
-
-            return {
-                object: obj,
-                p1: new THREE.Vector2(entity.startPoint.x, entity.startPoint.y),
-                p2: new THREE.Vector2(entity.endPoint.x, entity.endPoint.y),
-                bulge: 0
-            };
         }
 
         if (type === 'ARC') {
             const entity = obj.userData.entity;
+            if (entity && entity.center && entity.radius !== undefined) {
+                // Calculate endpoints mathematically
+                const cx = entity.center.x;
+                const cy = entity.center.y;
+                const r = entity.radius;
+                const startRad = (entity.startAngle || 0) * Math.PI / 180;
+                const endRad = (entity.endAngle || 0) * Math.PI / 180;
 
-            if (!entity || !entity.center || entity.radius === undefined) {
-                console.warn('[extractSegment] ARC missing entity data');
-                return null;
+                const p1 = new THREE.Vector2(
+                    cx + r * Math.cos(startRad),
+                    cy + r * Math.sin(startRad)
+                );
+                const p2 = new THREE.Vector2(
+                    cx + r * Math.cos(endRad),
+                    cy + r * Math.sin(endRad)
+                );
+
+                // Calculate bulge
+                let totalAngle = endRad - startRad;
+                if (totalAngle < 0) totalAngle += Math.PI * 2;
+                const bulge = Math.tan(totalAngle / 4);
+
+                return {
+                    object: obj,
+                    p1: p1,
+                    p2: p2,
+                    bulge: bulge
+                };
             }
-
-            // Calculate endpoints mathematically for accuracy (not from tessellated geometry)
-            const cx = entity.center.x;
-            const cy = entity.center.y;
-            const r = entity.radius;
-            const startRad = (entity.startAngle || 0) * Math.PI / 180;
-            const endRad = (entity.endAngle || 0) * Math.PI / 180;
-
-            const p1 = new THREE.Vector2(
-                cx + r * Math.cos(startRad),
-                cy + r * Math.sin(startRad)
-            );
-            const p2 = new THREE.Vector2(
-                cx + r * Math.cos(endRad),
-                cy + r * Math.sin(endRad)
-            );
-
-            const bulge = this.estimateBulge(entity);
-
-            return {
-                object: obj,
-                p1: p1,
-                p2: p2,
-                bulge: bulge
-            };
         }
 
-        return null;
+        // Fallback: Extract from geometry (e.g. Polyline segments)
+        return this.extractFromGeometry(obj);
     }
 
-    estimateBulge(arcEntity) {
-        // Check for undefined/null, not falsy (0 is a valid angle!)
-        if (arcEntity.startAngle === undefined || arcEntity.startAngle === null ||
-            arcEntity.endAngle === undefined || arcEntity.endAngle === null) {
-            return 0;
+    extractFromGeometry(obj) {
+        if (!obj.geometry || !obj.geometry.attributes.position) return null;
+
+        const pos = obj.geometry.attributes.position;
+        if (pos.count < 2) return null;
+
+        const p1 = new THREE.Vector2(pos.getX(0), pos.getY(0));
+        const p2 = new THREE.Vector2(pos.getX(pos.count - 1), pos.getY(pos.count - 1));
+
+        const segment = {
+            object: obj,
+            p1: p1,
+            p2: p2,
+            bulge: 0
+        };
+
+        // If it's a tessellated curve (more than 2 points), store intermediate vertices
+        if (pos.count > 2) {
+            segment.tessellatedVertices = [];
+            for (let i = 0; i < pos.count; i++) {
+                segment.tessellatedVertices.push({
+                    x: pos.getX(i),
+                    y: pos.getY(i),
+                    bulge: 0
+                });
+            }
         }
 
-        const startAng = arcEntity.startAngle * Math.PI / 180;
-        const endAng = arcEntity.endAngle * Math.PI / 180;
-
-        let theta = endAng - startAng;
-        if (theta < 0) theta += 2 * Math.PI;
-
-        // bulge = tan(θ/4)
-        return Math.tan(theta / 4);
+        return segment;
     }
 
 

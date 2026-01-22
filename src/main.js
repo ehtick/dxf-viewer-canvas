@@ -39,9 +39,17 @@ class DXFViewerApp {
         this.snappingManager = new SnappingManager(this.viewer);
         this.measurementManager = new MeasurementManager(this.viewer, this.snappingManager);
         this.objectInfoManager = new ObjectInfoManager(this.viewer);
-        this.weightManager = new WeightManager(this.viewer, this.languageManager, this.snappingManager, () => {
-            this.clearSelection();
-        });
+        this.weightManager = new WeightManager(
+            this.viewer,
+            this.languageManager,
+            this.snappingManager,
+            () => {
+                this.clearSelection();
+            },
+            (objects) => {
+                this.performChainSelection(objects);
+            }
+        );
         this.weightManager.init();
 
         this.setupUIEvents();
@@ -387,6 +395,7 @@ class DXFViewerApp {
                     }
                 });
                 this.objectInfoManager.update(this.selectedObjects);
+                this.weightManager.update(this.selectedObjects);
             } else {
                 this.updateStatus('No items found in box');
             }
@@ -492,6 +501,59 @@ class DXFViewerApp {
 
         } else {
             this.updateStatus('Ready');
+        }
+    }
+
+    performChainSelection(objects) {
+        if (!this.viewer.dxfGroup) return;
+        const allObjects = this.viewer.dxfGroup.children;
+
+        // 1. Initialize ToDo list with currently selected objects
+        // We use a Set for efficient removal
+        const todo = new Set(objects);
+        const processedIds = new Set();
+        let changed = false;
+
+        // 2. Process queue
+        while (todo.size > 0) {
+            // Pop an item
+            const [obj] = todo;
+            todo.delete(obj);
+
+            if (processedIds.has(obj.id)) continue;
+
+            // Find all connected entities (Chain)
+            const connected = this.findConnectedEntities(obj, allObjects);
+
+            // 3. Process the chain
+            for (const c of connected) {
+                // If this item was in our ToDo list, remove it (optimization)
+                if (todo.has(c)) {
+                    todo.delete(c);
+                }
+
+                // Mark as processed
+                processedIds.add(c.id);
+
+                // Add to selection if not already there
+                if (this.selectedObjects.indexOf(c) === -1) {
+                    this.selectedObjects.push(c);
+                    this.viewer.highlightObject(c, true);
+                    changed = true;
+                }
+            }
+        }
+
+        // 4. Final Updates
+        this.objectInfoManager.update(this.selectedObjects);
+
+        // Always force update WeightManager to check for closed loops using the final selection
+        this.weightManager.update(this.selectedObjects);
+
+        if (changed) {
+            this.updateStatus('Chain Selected: ' + this.selectedObjects.length + ' items');
+        } else {
+            this.updateStatus('Selection verified: ' + this.selectedObjects.length + ' items');
         }
     }
 
