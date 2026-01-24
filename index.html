@@ -38,6 +38,16 @@
                     <span id="file-name" class="file-name" data-i18n="noFileSelected">No file selected</span>
                 </div>
 
+                <!-- Download Button -->
+                <button class="icon-btn tool-btn ml-2 disabled:opacity-30 disabled:cursor-not-allowed" id="download-btn"
+                    title="Download DXF" data-i18n-title="downloadDxf" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <path d="M7 10l5 5 5-5" />
+                        <path d="M12 15V3" />
+                    </svg>
+                </button>
+
                 <!-- Print Button (Moved) -->
                 <button class="icon-btn tool-btn ml-2" id="print-btn" title="Print" data-i18n-title="print">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -426,8 +436,10 @@
                         <h3 data-i18n="scale">Ölçek</h3>
                     </div>
                     <div class="panel-content flex-1 overflow-y-auto p-3 space-y-4">
-                        <div class="text-center text-gray-400 text-sm mb-4" data-i18n="scrollToScale">
-                            Ölçeklemek için scroll kullanın
+                        <div class="text-left text-gray-400 text-sm mb-4">
+                            <div data-i18n="scrollToScale">🡕 Ölçeklemek için scroll kullanın</div>
+                            <div data-i18n="scrollToRotate">↻ Döndürmek için Ctrl + Scroll kullanın</div>
+                            <div data-i18n="clickToPlace">🟂 Yerleştirmek için tıklayın</div>
                         </div>
 
                         <!-- Template Scale -->
@@ -439,8 +451,16 @@
                             </div>
                         </div>
 
-                        <div class="text-center text-gray-400 text-sm mt-4" data-i18n="clickToPlace">
-                            Yerleştirmek için tıklayın
+                        <!-- Template Rotation -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-3 flex justify-between items-center border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="templateRotation">Döndürme</span>
+                            <div class="relative w-24">
+                                <input type="number" id="input-rotation" value="0.00" step="0.01" min="0" max="360"
+                                    class="w-full bg-black/20 border border-white/10 rounded px-2 py-1 text-right text-sm text-cyan-400 focus:outline-none focus:border-cyan-500 transition-colors font-mono appearance-none" />
+                                <span
+                                    class="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-gray-500 pointer-events-none">°</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -524,6 +544,45 @@
                         class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg transition-colors"
                         data-i18n="ok">Tamam</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download Confirmation Modal -->
+    <div id="download-modal"
+        class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
+        <div class="bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl p-6 w-[400px]">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-white" data-i18n="downloadConfirmTitle">Confirm Download</h3>
+                <button id="download-modal-close" class="text-gray-400 hover:text-white transition-colors">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="mb-6">
+                <p class="text-gray-300 text-sm leading-relaxed" data-i18n="downloadConfirmDesc">
+                    You are about to download the converted DXF version of the original file.
+                </p>
+            </div>
+
+            <div class="flex gap-3 justify-end">
+                <button id="download-cancel-btn"
+                    class="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white font-medium transition-colors text-sm"
+                    data-i18n="cancel">Cancel</button>
+                <button id="download-confirm-btn"
+                    class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors text-sm flex items-center gap-2"
+                    data-i18n="downloadBtn">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <path d="M7 10l5 5 5-5" />
+                        <path d="M12 15V3" />
+                    </svg>
+                    <span data-i18n="downloadBtn">Download</span>
+                </button>
             </div>
         </div>
     </div>

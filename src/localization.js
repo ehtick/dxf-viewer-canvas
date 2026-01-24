@@ -139,10 +139,17 @@ export const translations = {
         "cancel": "İptal",
         "scale": "Ölçek",
         "templateScale": "Şablon Ölçeği",
-        "scrollToScale": "Ölçeklemek için scroll kullanın",
-        "clickToPlace": "Yerleştirmek için tıklayın",
+        "templateRotation": "Döndürme",
+        "scrollToScale": "🡕 Ölçeklemek için scroll kullanın",
+        "scrollToRotate": "↻ Döndürmek için Ctrl + Scroll kullanın",
+        "clickToPlace": "🟂 Yerleştirmek için tıklayın",
+        "clickToPlace": "🟂 Yerleştirmek için tıklayın",
         "print": "Yazdır",
-        "selectPrintArea": "Yazdırma alanı seçin"
+        "selectPrintArea": "Yazdırma alanı seçin",
+        "downloadDxf": "DXF İndir",
+        "downloadConfirmTitle": "İndirmeyi Onayla",
+        "downloadConfirmDesc": "Orijinal dosyanın dönüştürülmüş DXF versiyonunu indirmek üzeresiniz.",
+        "downloadBtn": "İndir"
     },
     en: {
         // Header / File
@@ -279,10 +286,17 @@ export const translations = {
         "cancel": "Cancel",
         "scale": "Scale",
         "templateScale": "Template Scale",
+        "templateRotation": "Rotation",
         "scrollToScale": "Use scroll to scale",
+        "scrollToRotate": "Use Ctrl + Scroll to rotate",
+        "clickToPlace": "Click to place",
         "clickToPlace": "Click to place",
         "print": "Print",
-        "selectPrintArea": "Select print area"
+        "selectPrintArea": "Select print area",
+        "downloadDxf": "Download DXF",
+        "downloadConfirmTitle": "Confirm Download",
+        "downloadConfirmDesc": "You are about to download the converted DXF version of the original file.",
+        "downloadBtn": "Download"
     }
 };
 

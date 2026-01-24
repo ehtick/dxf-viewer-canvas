@@ -37,6 +37,7 @@ class DXFViewerApp {
 
         this.loader = new DxfLoader();
         this.dxf = null;
+        this.currentDxfFile = null; // Store the file object for download
         this.selectedObject = null;
         this.draggingCanvas = false;
 
@@ -175,6 +176,11 @@ class DXFViewerApp {
         if (undoBtn) undoBtn.addEventListener('click', () => this.history.undo());
         if (redoBtn) redoBtn.addEventListener('click', () => this.history.redo());
 
+        // Download Button
+        const downloadBtn = document.getElementById('download-btn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', () => this.downloadDxfFile());
+        }
 
         const settingsToggleBtn = document.getElementById('settings-toggle');
         const settingsMenu = document.getElementById('settings-menu');
@@ -351,6 +357,28 @@ class DXFViewerApp {
                 sidebar.classList.remove('hidden');
                 sidebarFloatingToggle.classList.add('hidden');
             });
+        }
+
+        // Download Confirmation Modal logic
+        const downloadModal = document.getElementById('download-modal');
+        if (downloadModal) {
+            const confirmBtn = document.getElementById('download-confirm-btn');
+            const cancelBtn = document.getElementById('download-cancel-btn');
+            const closeBtn = document.getElementById('download-modal-close');
+
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', () => {
+                    downloadModal.classList.add('hidden');
+                    this.executeDownload();
+                });
+            }
+
+            const closeHandler = () => {
+                downloadModal.classList.add('hidden');
+            };
+
+            if (cancelBtn) cancelBtn.addEventListener('click', closeHandler);
+            if (closeBtn) closeBtn.addEventListener('click', closeHandler);
         }
 
         this.selectedObjects = [];
@@ -1011,9 +1039,12 @@ class DXFViewerApp {
             const blob = await response.blob();
 
             // 6. Convert to File object
+            // 6. Convert to File object
             const convertedFile = new File([blob], file.name.replace(/\.dwg$/i, '.dxf'), {
                 type: 'application/dxf'
             });
+
+            this.currentDxfFile = convertedFile; // Store for download
 
             // 7. Load converted DXF
             await this.processDxfFile(convertedFile);
@@ -1031,6 +1062,15 @@ class DXFViewerApp {
     async processDxfFile(file) {
         this.updateStatus('Parsing DXF...');
         try {
+            // If it's a direct DXF load (not from conversion which sets it earlier), store it.
+            // But processDxfFile is called by loadDXFFile and handleDwgConversion.
+            // handleDwgConversion sets it. loadDXFFile calls processDxfFile directly for .dxf.
+            // So we should set it here if not already set? Or just overwrite?
+            // Actually, safest is to overwrite if the passed file is different?
+            // Simpler: Just set it here.
+            this.currentDxfFile = file;
+            this.updateDownloadButtonState();
+
             const dxf = await this.loader.load(file);
             console.log('DXF Data:', dxf);
             this.dxf = dxf;
@@ -1255,6 +1295,41 @@ class DXFViewerApp {
             groupDiv.appendChild(list);
             treeContainer.appendChild(groupDiv);
         });
+    }
+
+    updateDownloadButtonState() {
+        const btn = document.getElementById('download-btn');
+        if (btn) {
+            if (this.currentDxfFile) {
+                btn.disabled = false;
+            } else {
+                btn.disabled = true;
+            }
+        }
+    }
+
+    downloadDxfFile() {
+        if (!this.currentDxfFile) return;
+
+        const modal = document.getElementById('download-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        } else {
+            // Fallback if modal missing
+            this.executeDownload();
+        }
+    }
+
+    executeDownload() {
+        if (!this.currentDxfFile) return;
+        const url = URL.createObjectURL(this.currentDxfFile);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = this.currentDxfFile.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 }
 

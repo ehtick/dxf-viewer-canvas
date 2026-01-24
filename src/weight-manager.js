@@ -144,6 +144,23 @@ export class WeightManager {
             this.printBtn.addEventListener('click', () => this.enterPrintMode());
         }
 
+        // Rotation Input Handler
+        const rotationInput = document.getElementById('input-rotation');
+        if (rotationInput) {
+            rotationInput.addEventListener('input', (e) => {
+                if (this.templateMode) {
+                    const degrees = parseFloat(e.target.value) || 0;
+                    // Convert to radians for internal state
+                    this.templateRotation = (degrees * Math.PI) / 180;
+                    this.applyFloatingTransform();
+                }
+            });
+            // Stop propagation of keydown events so they don't trigger app shortcuts while typing
+            rotationInput.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+            });
+        }
+
         // ESC key handler for template mode
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.templateMode) {
@@ -354,7 +371,16 @@ export class WeightManager {
         if (this.floatingGroup.children.length > 0) {
             const floatBox = new THREE.Box3().setFromObject(this.floatingGroup);
             this.floatingCenter = floatBox.getCenter(new THREE.Vector3());
-            console.log(`[WeightManager] Cloned ${this.floatingGroup.children.length} entities, center:`, this.floatingCenter);
+            console.log(`[WeightManager] Re-centering ${this.floatingGroup.children.length} entities. Center:`, this.floatingCenter);
+
+            // Re-center all children so the group origin (0,0,0) is at the geometry center
+            for (const child of this.floatingGroup.children) {
+                child.position.sub(this.floatingCenter);
+                child.updateMatrix();
+            }
+            // After re-centering, the group's visual center is effectively (0,0,0)
+            // We store the original center to restore absolute position if needed, 
+            // but for placement we just need relative logic.
         } else {
             console.warn('[WeightManager] Floating group is empty!');
             this.floatingCenter = new THREE.Vector3(0, 0, 0);
@@ -429,32 +455,21 @@ export class WeightManager {
         const vec = new THREE.Vector3(x, y, 0);
         vec.unproject(this.viewer.camera);
 
-        // Position floating group so its center is at cursor
-        // Account for scaling and original center offset
-        const scaledCenterX = this.floatingCenter.x * this.templateScale;
-        const scaledCenterY = this.floatingCenter.y * this.templateScale;
+        // Position floating group so its center (which is now 0,0 locally) is at cursor
+        // No offset needed because we centered the geometry in the group!
 
         // Log one-time debug for position
         if (!this._hasLoggedPosition) {
             console.log('[WeightManager] Updating floating position:', {
                 mouseNDC: { x, y },
                 mouseWorld: vec,
-                floatingCenter: this.floatingCenter,
-                scale: this.templateScale,
-                finalPos: {
-                    x: vec.x - scaledCenterX,
-                    y: vec.y - scaledCenterY
-                }
+                scale: this.templateScale
             });
             this._hasLoggedPosition = true;
         }
 
         // Set Z to 0.1 to ensure it sits above the template (Z=0)
-        this.floatingGroup.position.set(
-            vec.x - scaledCenterX,
-            vec.y - scaledCenterY,
-            0.1
-        );
+        this.floatingGroup.position.set(vec.x, vec.y, 0.1);
     }
     hideNonSelectedObjects() {
         // Hide all DXF objects
@@ -565,6 +580,7 @@ export class WeightManager {
     }
 
     updateScaleDisplay() {
+        // Update Scale
         const scaleEl = document.getElementById('val-scale');
         if (scaleEl) {
             // Format as 1:X or X:1
@@ -572,6 +588,35 @@ export class WeightManager {
                 scaleEl.textContent = `${this.templateScale.toFixed(1)}:1`;
             } else {
                 scaleEl.textContent = `1:${(1 / this.templateScale).toFixed(1)}`;
+            }
+        }
+
+        // Update Rotation
+        const rotationEl = document.getElementById('input-rotation');
+        if (rotationEl) {
+            // Convert radians to degrees
+            let degrees = (this.templateRotation * 180) / Math.PI;
+
+            // Normalize to 0-360 range for display
+            degrees = degrees % 360;
+            if (degrees < 0) degrees += 360;
+
+            // Avoid overwriting input if user is currently typing and focused? 
+            // Actually, scroll updates should override text to give feedback.
+            // But if we call this from scroll handler, it's fine.
+            // If called from input handler, we might want to avoid circular setting?
+            // Since input handler calls applyFloatingTransform but NOT updateScaleDisplay (we should check),
+            // let's ensure input handler calls updateScaleDisplay? No, input handler sets rotation directly.
+
+            // Just update the value
+            // Check if element is focused to avoid disrupting typing?
+            // If resizing via scroll, we definitely want to update it.
+            if (document.activeElement !== rotationEl) {
+                rotationEl.value = degrees.toFixed(2);
+            } else {
+                // If focused, maybe don't update? But scroll changes value.
+                // If user uses scroll WHILE focused on input, we should update.
+                rotationEl.value = degrees.toFixed(2);
             }
         }
     }
