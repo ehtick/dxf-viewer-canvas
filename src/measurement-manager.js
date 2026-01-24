@@ -2,11 +2,12 @@
 import * as THREE from 'three';
 
 export class MeasurementManager {
-    constructor(viewer, snappingManager, onStatusUpdate) {
+    constructor(viewer, snappingManager, onStatusUpdate, onMeasurementAdded) {
         this.viewer = viewer;
         this.scene = viewer.scene;
         this.snappingManager = snappingManager;
         this.onStatusUpdate = onStatusUpdate || (() => { });
+        this.onMeasurementAdded = onMeasurementAdded || null;
 
         this.activeTool = null; // 'distance', 'angle', 'area', etc.
         this.points = [];
@@ -20,6 +21,26 @@ export class MeasurementManager {
         // Materials
         this.lineMaterial = new THREE.LineBasicMaterial({ color: 0x32a852, depthTest: false }); // Green
         this.previewMaterial = new THREE.LineDashedMaterial({ color: 0x32a852, dashSize: 5, gapSize: 3, depthTest: false });
+
+        // Highlight Material for Selection
+        this.highlightMaterial = new THREE.LineBasicMaterial({ color: 0xFFD700, depthTest: false }); // Gold
+    }
+
+    removeMeasurement(visual) {
+        const index = this.measurements.findIndex(m => m.visual === visual);
+        if (index > -1) {
+            const m = this.measurements[index];
+            this.measurements.splice(index, 1);
+            this.group.remove(visual);
+            return m; // Return data for Undo
+        }
+        return null;
+    }
+
+    restoreMeasurement(data) {
+        if (!data) return;
+        this.measurements.push(data);
+        this.group.add(data.visual);
     }
 
     activateTool(tool) {
@@ -38,6 +59,50 @@ export class MeasurementManager {
         } else if (tool === 'angle') {
             this.onStatusUpdate(`Selected Angle. Step 1: Click center point.`);
         }
+    }
+
+    highlightMeasurement(visual, highlight) {
+        if (!visual) return;
+        visual.children.forEach(c => {
+            if (c.userData.originalColor === undefined) c.userData.originalColor = c.material.color.getHex();
+
+            // Toggle material or color
+            if (highlight) {
+                c.material = this.highlightMaterial;
+            } else {
+                // Restore logic - simplified for now, assuming basic lines
+                if (visual.userData.isPreview) {
+                    c.material = this.previewMaterial;
+                } else {
+                    // We need to restore the correct material (Line or Dashed or Arrow)
+                    // This is a bit hacky. Better to just change color?
+                    // But materials are shared. Clone material?
+                    // Let's use the method of swapping material to a highlight one.
+                    // For restoration, we need original material.
+                    if (c.userData.originalMaterial) {
+                        c.material = c.userData.originalMaterial;
+                    } else {
+                        // First time, save it
+                        // But we just overwrote it in line 48 if checking highlight first?
+                        // Wait, loop runs line 46 first.
+                    }
+                }
+            }
+        });
+
+        // Better approach: Cloning/Swapping
+        visual.traverse((child) => {
+            if (child.isLine || child.isMesh) { // Mesh for Arrows
+                if (highlight) {
+                    if (!child.userData.originalMaterial) child.userData.originalMaterial = child.material;
+                    child.material = this.highlightMaterial;
+                } else {
+                    if (child.userData.originalMaterial) {
+                        child.material = child.userData.originalMaterial;
+                    }
+                }
+            }
+        });
     }
 
     deactivateTool() {
@@ -120,16 +185,22 @@ export class MeasurementManager {
                 const arrowPoint = this.points[1];
 
                 const visual = this.createSmartRadiusVisual(center, radius, arrowPoint, textPoint, this.activeTool, this.activeScale);
-                this.group.add(visual);
-
                 const scale = this.activeScale || 1;
                 const val = (this.activeTool === 'radius') ? radius : radius * 2;
                 const valScaled = val / scale;
-                this.measurements.push({
+
+                const mData = {
                     type: this.activeTool,
                     value: valScaled.toFixed(3),
                     visual: visual
-                });
+                };
+
+                if (this.onMeasurementAdded) {
+                    this.onMeasurementAdded(mData);
+                } else {
+                    this.measurements.push(mData);
+                    this.group.add(visual);
+                }
 
                 this.points = [];
                 this.currentRadiusEntity = null;
@@ -167,8 +238,14 @@ export class MeasurementManager {
                 const placement = point;
                 const state = this.getDimensionState(p1, p2, placement, this.activeScale);
                 const visual = this.createDimensionVisual(state, false);
-                this.group.add(visual);
-                this.measurements.push({ type: 'distance', p1, p2, placement, value: state.value, visual, stateType: state.type, scale: this.activeScale });
+                const mData = { type: 'distance', p1, p2, placement, value: state.value, visual, stateType: state.type, scale: this.activeScale };
+
+                if (this.onMeasurementAdded) {
+                    this.onMeasurementAdded(mData);
+                } else {
+                    this.group.add(visual);
+                    this.measurements.push(mData);
+                }
                 this.points = [];
                 this.clearTemp();
                 this.activeScale = 1.0;
@@ -214,12 +291,17 @@ export class MeasurementManager {
             else if (this.points.length === 3) {
                 const center = this.points[0], start = this.points[1], end = this.points[2], placement = p;
                 const visual = this.createAngleVisual(center, start, end, placement, false);
-                this.group.add(visual);
                 const v1 = new THREE.Vector3().subVectors(start, center);
                 const v2 = new THREE.Vector3().subVectors(end, center);
                 let diff = Math.atan2(v2.y, v2.x) - Math.atan2(v1.y, v1.x);
                 if (diff < 0) diff += Math.PI * 2;
-                this.measurements.push({ type: 'angle', center, start, end, placement, value: (diff * 180 / Math.PI).toFixed(1), visual });
+
+                if (this.onMeasurementAdded) {
+                    this.onMeasurementAdded({ type: 'angle', center, start, end, placement, value: (diff * 180 / Math.PI).toFixed(1), visual });
+                } else {
+                    this.group.add(visual);
+                    this.measurements.push({ type: 'angle', center, start, end, placement, value: (diff * 180 / Math.PI).toFixed(1), visual });
+                }
                 this.points = [];
                 this.clearTemp();
             }
@@ -558,11 +640,12 @@ export class MeasurementManager {
             0
         );
 
-        const textMesh = this.createTextMesh(deg, textRot, color);
+        const textMesh = this.createTextMesh(deg, textRot, color, group.userData.tolerance);
         textMesh.position.copy(textPos);
         group.add(textMesh);
 
         group.userData.value = deg; // Update Value
+        group.userData.isUserDefined = true;
         return group;
     }
 
@@ -778,7 +861,7 @@ export class MeasurementManager {
         const group = new THREE.Group();
         const rVal = radius / scale;
         const text = "R" + rVal.toFixed(2);
-        group.userData = { type: 'DIMENSION', value: text, isPreview: false };
+        group.userData = { type: 'DIMENSION', value: text, isPreview: false, isUserDefined: true };
 
         // Line from Center to Click Point (projected onto max radius if needed, but click on arc implies distance is r)
         // Actually clickPoint might be slightly off due to picking.
@@ -796,7 +879,7 @@ export class MeasurementManager {
 
         // Text at mid
         const mid = new THREE.Vector3().addVectors(center, pEdge).multiplyScalar(0.5);
-        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color);
+        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color, group.userData.tolerance);
         textMesh.position.copy(mid);
         group.add(textMesh);
 
@@ -807,7 +890,7 @@ export class MeasurementManager {
         const group = new THREE.Group();
         const dVal = radius * 2 / scale;
         const text = "Ø" + dVal.toFixed(2);
-        group.userData = { type: 'DIMENSION', value: text, isPreview: false };
+        group.userData = { type: 'DIMENSION', value: text, isPreview: false, isUserDefined: true };
 
         // Vector Center -> Click
         const v = new THREE.Vector3().subVectors(clickPoint, center).normalize();
@@ -823,7 +906,7 @@ export class MeasurementManager {
         group.add(this.createArrow(p2, v.clone().negate(), 3.0, this.lineMaterial.color)); // Pointing Opposite
 
         // Text at Center
-        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color);
+        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color, group.userData.tolerance);
         textMesh.position.copy(center);
         // Offset text slightly to not overlap line?
         textMesh.position.y += 2.0;
@@ -835,9 +918,9 @@ export class MeasurementManager {
     showAreaMeasurement(point, value) {
         const group = new THREE.Group();
         const text = "S: " + value.toFixed(2);
-        group.userData = { type: 'DIMENSION', value: text, isPreview: false };
+        group.userData = { type: 'DIMENSION', value: text, isPreview: false, isUserDefined: true };
 
-        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color);
+        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color, group.userData.tolerance);
         textMesh.position.copy(point);
         group.add(textMesh);
         this.group.add(group);
@@ -944,9 +1027,13 @@ export class MeasurementManager {
             dimP1 = p1.clone().add(offset);
             dimP2 = p2.clone().add(offset);
 
-            // Angle adjustment: Text should be readable (not upside down)
+            // Angle adjustment: Text should be readable
+            // Standard CAD: Horizontal read from bottom, Vertical read from right (Bottom-to-Top).
+            // This means we want Angle in (-PI/2, PI/2].
+            // Specifically, -PI/2 (Top-to-Bottom) should be converted to PI/2 (Bottom-to-Top).
+
             if (angle > Math.PI / 2) angle -= Math.PI;
-            if (angle < -Math.PI / 2) angle += Math.PI;
+            if (angle <= -Math.PI / 2) angle += Math.PI; // Changed < to <= to flip -90 to 90
         }
 
         // Precision Clamp
@@ -964,7 +1051,7 @@ export class MeasurementManager {
 
     createDimensionVisual(state, isPreview) {
         const group = new THREE.Group();
-        group.userData = { type: 'DIMENSION', value: state.text, isPreview: isPreview };
+        group.userData = { type: 'DIMENSION', value: state.text, isPreview: isPreview, isUserDefined: !isPreview };
         const material = isPreview ? this.previewMaterial : this.lineMaterial;
 
         const { p1, p2, dimP1, dimP2, angle, text } = state;
@@ -978,7 +1065,7 @@ export class MeasurementManager {
         // We need to create text mesh anyway.
 
         const color = material.color;
-        const textMesh = this.createTextMesh(text, angle, color);
+        const textMesh = this.createTextMesh(text, angle, color, group.userData.tolerance);
 
         // Measure Text in World Space
         textMesh.geometry.computeBoundingBox();
@@ -1103,8 +1190,29 @@ export class MeasurementManager {
         const mid = new THREE.Vector3().addVectors(dimP1, dimP2).multiplyScalar(0.5);
 
         // Offset
-        const offsetDist = 1.5; // Gap
-        const textOffset = new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0).multiplyScalar(offsetDist);
+        // World Scale Height is 5.0. Half-height is 2.5. We need > 2.5 to clear execution.
+        const offsetDist = 3.5; // Gap increased from 1.5 to 3.5 to clear text height
+        let textOffset = new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0).multiplyScalar(offsetDist);
+
+        // Smart Text Placement: Ensure text is "Outside" (Away from Object)
+        // Check "Pull Direction" from Object (p1, p2) to Dimension Line (dimP1, dimP2)
+        const objMid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+        const dimMid = new THREE.Vector3().addVectors(dimP1, dimP2).multiplyScalar(0.5);
+        const pullDir = new THREE.Vector3().subVectors(dimMid, objMid);
+
+        // If Pull Direction opposes the default Text Offset, flip the offset.
+        // Dot product < 0 means they are opposite.
+        // Note: Default textOffset is usually "Up". If Pull is "Down", we want text "Down".
+        // If Pull is "Down" and Offset is "Up", angle is > 90.
+        // Correct logic: TextOffset should align with PullDir?
+        // Or TextOffset should just NOT point towards Object.
+        // Simple check: If Dot(PullDir, TextOffset) < 0, flip TextOffset.
+
+        if (pullDir.lengthSq() > 0.001) { // Avoid zero vector issues
+            if (pullDir.dot(textOffset) < 0) {
+                textOffset.negate();
+            }
+        }
 
         // If tight, maybe move text UP?
         // User didn't specify text move, just arrow flip.
@@ -1191,7 +1299,7 @@ export class MeasurementManager {
     }
 
     // Replace Sprite with Mesh for rotation
-    createTextMesh(text, angle, colorVal) {
+    createTextMesh(text, angle, colorVal, tolerance) {
         const fontsize = 48; // Increased resolution
         const fontface = "Arial";
         const scale = 1; // high-res canvas
@@ -1199,25 +1307,71 @@ export class MeasurementManager {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Measure
+        // Measure Main Text
         ctx.font = `Bold ${fontsize * scale}px ${fontface}`;
         const metrics = ctx.measureText(text);
         const w = metrics.width;
-        const h = fontsize * scale * 1.4;
+        const h = fontsize * scale * 1.4; // Base height
 
-        canvas.width = w + 4; // padding
+        // Tolerance Calculation
+        let tolW = 0;
+        let isSymmetric = false;
+        let tolStrPlus = "";
+        let tolStrMinus = "";
+
+        if (tolerance && tolerance.active) {
+            const plus = parseFloat(tolerance.plus) || 0;
+            const minus = parseFloat(tolerance.minus) || 0;
+
+            if (plus === minus) {
+                isSymmetric = true;
+                tolStrPlus = "±" + plus;
+            } else {
+                tolStrPlus = "+" + plus;
+                tolStrMinus = "-" + minus;
+            }
+
+            ctx.font = `Bold ${(fontsize * 0.6) * scale}px ${fontface}`;
+            const mPlus = ctx.measureText(tolStrPlus);
+            const mMinus = ctx.measureText(tolStrMinus);
+            tolW = Math.max(mPlus.width, mMinus.width) + 10; // Add padding
+        }
+
+        canvas.width = w + tolW + 4; // padding
         canvas.height = h;
 
         // Draw (Transparent BG)
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        ctx.font = `Bold ${fontsize * scale}px ${fontface}`;
         ctx.fillStyle = (typeof colorVal === 'number') ? '#' + colorVal.toString(16) : colorVal;
         if (typeof colorVal === 'object') ctx.fillStyle = '#' + colorVal.getHexString();
 
-        ctx.textAlign = 'center';
+        // Draw Main Text
+        ctx.font = `Bold ${fontsize * scale}px ${fontface}`;
+        ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+        // Center the entire block? 
+        // TextMesh origin is center.
+        // We draw starting from left 2px.
+        const startX = 2;
+        ctx.fillText(text, startX, canvas.height / 2);
+
+        // Draw Tolerance
+        if (tolerance && tolerance.active) {
+            ctx.font = `Bold ${(fontsize * 0.6) * scale}px ${fontface}`;
+            const tolX = startX + w + 5;
+
+            if (isSymmetric) {
+                ctx.fillText(tolStrPlus, tolX, canvas.height / 2);
+            } else {
+                // Stacked
+                // Plus (Top)
+                ctx.fillText(tolStrPlus, tolX, (canvas.height / 2) - (fontsize * 0.25));
+                // Minus (Bottom)
+                ctx.fillText(tolStrMinus, tolX, (canvas.height / 2) + (fontsize * 0.35));
+            }
+        }
 
         const tex = new THREE.CanvasTexture(canvas);
         tex.minFilter = THREE.LinearFilter;
@@ -1236,7 +1390,52 @@ export class MeasurementManager {
 
         const mesh = new THREE.Mesh(geom, mat);
         mesh.rotation.z = angle;
+        // Since we drew from Left, but geometry is centered, we might need to shift if we want "Center" to mean "Center of Main Text" or "Center of Whole Block".
+        // Current logic: TextMesh position is copied to visual center. 
+        // If we add tolerance, the "Center" of the mesh (origin) creates the pivot.
+        // If we want the main value to stay centered on the dimension line, we might need to offset the mesh.
+        // But for simplicity, we center the whole block.
         return mesh;
+    }
+
+    updateTolerance(visual, toleranceData) {
+        if (!visual) return;
+        visual.userData.tolerance = toleranceData;
+
+        // Re-create text mesh
+        // Find existing text mesh and replace it
+        // The text mesh is usually the last child or we can identify it by type (Mesh vs Line)
+        // But arrows are also Meshes. TextMesh has PlaneGeometry.
+
+        // Find the text object
+        let textObj = null;
+        visual.children.forEach(c => {
+            if (c.isMesh && c.geometry.type === 'PlaneGeometry') {
+                textObj = c;
+            }
+        });
+
+        if (textObj) {
+            const oldPos = textObj.position.clone();
+            const oldRot = textObj.rotation.z;
+            const color = visual.userData.originalColor || this.lineMaterial.color;
+            const value = visual.userData.value;
+
+            // Extract pure value if needed? value usually stores "R50.00"
+            // We pass the full string to createTextMesh
+
+            // Remove old
+            visual.remove(textObj);
+            textObj.geometry.dispose();
+            textObj.material.dispose();
+            textObj.material.map.dispose();
+
+            // Create new
+            const newText = this.createTextMesh(value, oldRot, color, toleranceData);
+            newText.position.copy(oldPos);
+            newText.userData.originalMaterial = newText.material; // For highlighting logic preservation
+            visual.add(newText);
+        }
     }
 
     createMeasurementVisual(p1, p2, labelText, isPreview) {
@@ -1370,7 +1569,7 @@ export class MeasurementManager {
 
         // 5. Text Label
         // Place at textPoint (centered).
-        const textMesh = this.createTextMesh(textStr, 0, color);
+        const textMesh = this.createTextMesh(textStr, 0, color, group.userData.tolerance);
         textMesh.position.copy(textPoint);
         textMesh.position.z = 0.05;
         group.add(textMesh);

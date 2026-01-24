@@ -6,6 +6,9 @@ import { SnappingManager } from './snapping-manager.js';
 import { MeasurementManager } from './measurement-manager.js';
 import { ObjectInfoManager } from './object-info-manager.js';
 import { WeightManager } from './weight-manager.js';
+import { CommandHistory } from './command-history.js';
+import { CmdAddMeasurement, CmdDelete } from './commands.js';
+
 
 class DXFViewerApp {
     constructor() {
@@ -25,7 +28,10 @@ class DXFViewerApp {
         this.languageManager = new LanguageManager();
         this.languageManager.init();
 
+        this.history = new CommandHistory((canUndo, canRedo) => this.updateUndoRedoUI(canUndo, canRedo));
+
         this.viewer = new SceneViewer(this.canvas);
+
         this.viewer.languageManager = this.languageManager;
         this.viewer.app = this; // Link app to viewer for callbacks (e.g. from MeasurementManager)
 
@@ -42,9 +48,12 @@ class DXFViewerApp {
         this.measurementManager = new MeasurementManager(
             this.viewer,
             this.snappingManager,
-            (msg) => this.updateStatus(msg)
+            (msg) => this.updateStatus(msg),
+            (data) => {
+                this.history.execute(new CmdAddMeasurement(this.measurementManager, data));
+            }
         );
-        this.objectInfoManager = new ObjectInfoManager(this.viewer);
+        this.objectInfoManager = new ObjectInfoManager(this.viewer, this.measurementManager);
         this.weightManager = new WeightManager(
             this.viewer,
             this.languageManager,
@@ -159,6 +168,13 @@ class DXFViewerApp {
         if (zoomExtentsBtn) {
             zoomExtentsBtn.addEventListener('click', () => this.viewer.zoomExtents());
         }
+
+        // Undo/Redo Buttons
+        const undoBtn = document.getElementById('undo-btn');
+        const redoBtn = document.getElementById('redo-btn');
+        if (undoBtn) undoBtn.addEventListener('click', () => this.history.undo());
+        if (redoBtn) redoBtn.addEventListener('click', () => this.history.redo());
+
 
         const settingsToggleBtn = document.getElementById('settings-toggle');
         const settingsMenu = document.getElementById('settings-menu');
@@ -350,6 +366,24 @@ class DXFViewerApp {
     }
 
     onKeyDown(e) {
+        // Undo/Redo Shortcuts (Ctrl+Z, Ctrl+Y)
+        if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
+            e.preventDefault();
+            this.history.undo();
+            return;
+        }
+        if (e.ctrlKey && (e.key === 'y' || e.key === 'Y')) {
+            e.preventDefault();
+            this.history.redo();
+            return;
+        }
+
+        // Delete Key
+        if (e.key === 'Delete') {
+            this.deleteSelected();
+            return;
+        }
+
         if (e.key === 'Escape') {
             // 0. Close Measurement Dropdown
             const measureMenu = document.getElementById('measure-dropdown-menu');
@@ -381,6 +415,41 @@ class DXFViewerApp {
 
             // Priority 3: Clear selection as fallback
             this.clearSelection();
+        }
+    }
+
+    deleteSelected() {
+        if (this.selectedObjects.length === 0) return;
+
+        const cmd = new CmdDelete(
+            this.viewer,
+            this.measurementManager,
+            this.selectedObjects,
+            () => {
+                // On Complete (Execute): Clear Global Selection
+                // Note: The command itself handles hiding/removing
+                // But we need to reset the main app's selection array
+                this.selectedObjects = [];
+                this.objectInfoManager.update([]);
+                this.weightManager.update([]);
+                document.getElementById('selection-box')?.classList.add('hidden');
+                this.updateStatus('Deleted ' + cmd.selection.length + ' items');
+            }
+        );
+
+        this.history.execute(cmd);
+    }
+
+    updateUndoRedoUI(canUndo, canRedo) {
+        const undoBtn = document.getElementById('undo-btn');
+        const redoBtn = document.getElementById('redo-btn');
+
+        if (undoBtn) {
+            undoBtn.disabled = !canUndo;
+            // Optionally toggle opacity classes directly if disabled attribute isn't enough for styling
+        }
+        if (redoBtn) {
+            redoBtn.disabled = !canRedo;
         }
     }
 
@@ -674,22 +743,57 @@ class DXFViewerApp {
         const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         const pointer = new THREE.Vector2(x, y);
 
-        const intersects = this.viewer.raycast(pointer);
+        // 1. Raycast Entities
+        let intersects = this.viewer.raycast(pointer);
 
-        if (intersects.length > 0) {
-            const hit = intersects[0].object;
+        // 2. Raycast Measurements
+        let measureIntersects = [];
+        if (this.measurementManager && this.measurementManager.group) {
+            measureIntersects = this.viewer.raycaster.intersectObjects(this.measurementManager.group.children, true);
+        }
+
+        // 3. Priority Decision
+        // If measurement hit, prefer it? Or picking logic closest?
+        // Usually measurements are on top.
+
+        let hit = null;
+        let isMeasurement = false;
+
+        // Sort both by distance logic (already sorted by three.js)
+        // Check closest of both
+        if (measureIntersects.length > 0) {
+            const mDist = measureIntersects[0].distance;
+            const eDist = (intersects.length > 0) ? intersects[0].distance : Infinity;
+
+            if (mDist <= eDist) {
+                // Measurement hit
+                // Find top-level visual group
+                let target = measureIntersects[0].object;
+                while (target.parent && target.parent !== this.measurementManager.group) {
+                    target = target.parent;
+                }
+                hit = target;
+                isMeasurement = true;
+            }
+        }
+
+        if (!hit && intersects.length > 0) {
+            hit = intersects[0].object;
+        }
+
+        if (hit) {
             let target = hit;
 
-            // Use parent only for Dimension and Insert (not for Polyline - we want individual segments)
-            if (hit.parent && hit.parent.userData) {
+            // Handle DXF Entity Hierarchy (Dimensions, Inserts)
+            if (!isMeasurement && hit.parent && hit.parent.userData) {
                 const pType = hit.parent.userData.type;
                 if (pType === 'DIMENSION' || pType === 'INSERT') {
                     target = hit.parent;
                 }
             }
-            // Fallback: Check if hit itself is marked (e.g. Dimensions might have child/parent weirdness)
-            if (hit.userData.type === 'DIMENSION') target = hit;
+            if (!isMeasurement && hit.userData.type === 'DIMENSION') target = hit;
 
+            // Toggle Selection
             const idx = this.selectedObjects.indexOf(target);
 
             if (idx > -1) {
@@ -705,7 +809,8 @@ class DXFViewerApp {
             this.updateStatus(this.selectedObjects.length > 0 ? 'Selected: ' + this.selectedObjects.length + ' items' : 'Ready');
 
         } else {
-            this.updateStatus('Ready');
+            // Click on empty space -> Clear
+            this.clearSelection();
         }
     }
 

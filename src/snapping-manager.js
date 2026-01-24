@@ -176,30 +176,17 @@ export class SnappingManager {
 
         // Draw Markers for ALL Sticky Snaps
         this.stickySnaps.forEach(snap => {
-            this.drawSnapMarker(snap);
+            this.drawSnapMarker(snap, true); // true = isSticky (Plus sign)
         });
 
         // Determine functionality and draw primary snap
         if (closestSnap) {
             this.activeSnap = closestSnap;
-            // Draw closest snap if it's NOT in the sticky list (to avoid double drawing / visual clash)
-            // Or just draw it if it's different.
-            // Simple check: same type and very close position
-            let alreadyDrawn = false;
-            for (const s of this.stickySnaps) {
-                if (s.type === closestSnap.type && s.point.distanceTo(closestSnap.point) < 0.001) {
-                    alreadyDrawn = true;
-                    break;
-                }
-            }
-
-            if (!alreadyDrawn) {
-                this.drawSnapMarker(closestSnap);
-            }
+            // Draw closest snap (Active = Circle/Square/etc)
+            // Even if it duplicates position of sticky, we want the Active visual on top.
+            this.drawSnapMarker(closestSnap, false);
         } else if (this.stickySnaps.length > 0) {
             // No new snap found -> Fallback to closest sticky
-            // Find closest sticky to cursor in screen space or world space? 
-            // World space is cleaner.
 
             let bestSticky = null;
             let bestDistSq = Infinity;
@@ -214,6 +201,9 @@ export class SnappingManager {
 
             if (bestSticky && bestDistSq < (worldThreshold * worldThreshold)) {
                 this.activeSnap = bestSticky;
+                // If we are actively snapping to a sticky one, draw it as ACTIVE (Circle)
+                // to show it's "Hot".
+                this.drawSnapMarker(bestSticky, false);
             }
         }
 
@@ -392,7 +382,7 @@ export class SnappingManager {
         return snaps;
     }
 
-    drawSnapMarker(snap) {
+    drawSnapMarker(snap, isSticky = false) {
         // Size in pixels (constant screen size)
         const sizePx = 10;
         const worldPerPixel = this.viewer.getWorldPerPixel
@@ -402,7 +392,40 @@ export class SnappingManager {
 
         let geometry;
 
-        if (snap.type === 'endpoint') {
+        if (isSticky && snap.type === 'center') {
+            // Sticky Center: Draw a Plus (+)
+            const pts = [];
+            pts.push(new THREE.Vector3(-size / 2, 0, 0));
+            pts.push(new THREE.Vector3(size / 2, 0, 0));
+            pts.push(new THREE.Vector3(0, -size / 2, 0));
+            pts.push(new THREE.Vector3(0, size / 2, 0));
+            // Note: GL_LINES (LineSegments) logic for separated lines
+            // But we use THREE.Line which strips. 
+            // 0->1 (Horiz), 1->2 (Diagonal jump? NO)
+            // Need disjoint?
+            // Simple approach: Use a Cross Box, or just draw one line then another via child?
+            // Or just use points order: -x,0 -> x,0 -> 0,0 -> 0,-y -> 0,y (overlap center)
+            // Easier: Just use vertices for 2 lines and use LineSegments if we changed material type?
+            // But MarkerMaterial is LineBasicMaterial.
+            // Let's create a BufferGeometry with "LineSegments" draw mode? 
+            // THREE.Line uses LineStrip.
+            // THREE.LineSegments uses Pairs.
+
+            // To be safe with existing system (Line), we can draw a continuous path that looks like a plus?
+            // Or just add 2 line objects.
+            // Let's try continuous path with backtracking (degenerate lines):
+            // L->R->Center->Top->Bottom.
+            const s2 = size / 2;
+            const pts2 = [
+                new THREE.Vector3(-s2, 0, 0),
+                new THREE.Vector3(s2, 0, 0),
+                new THREE.Vector3(0, 0, 0), // Back to center
+                new THREE.Vector3(0, s2, 0),
+                new THREE.Vector3(0, -s2, 0)
+            ];
+            geometry = new THREE.BufferGeometry().setFromPoints(pts2);
+
+        } else if (snap.type === 'endpoint') {
             // Square
             const pts = [];
             pts.push(new THREE.Vector3(-size / 2, -size / 2, 0));
@@ -420,7 +443,7 @@ export class SnappingManager {
             pts.push(new THREE.Vector3(-size / 2, -size / 2, 0));
             geometry = new THREE.BufferGeometry().setFromPoints(pts);
         } else if (snap.type === 'center') {
-            // Circle (using low res polygon)
+            // Circle (Active Hover)
             const pts = [];
             for (let i = 0; i <= 16; i++) {
                 const a = (i / 16) * Math.PI * 2;
@@ -437,18 +460,7 @@ export class SnappingManager {
             pts.push(new THREE.Vector3(0, size / 2, 0));
             geometry = new THREE.BufferGeometry().setFromPoints(pts);
         } else {
-            // Default: Intersection / Perpendicular / Nearest -> X Cross
-            // To avoid NaN, we use LineSegments logic implies pairs.
-            // But we are using THREE.Line (strip).
-            // So we draw a Hourglass shape that looks like X? 
-            // Or just a Box with X? 
-            // Let's just use a Square with Cross (Envelope) or just a simple Square for now to be safe.
-            // Or just the X using 5 points: TopLeft -> BottomRight -> ... cant do disjoint X with LineStrip.
-            // I'll use a small Circle/Box for default to be safe.
-            // Actually, "Intersection" is X usually. Use 'LineSegments' instead of 'Line' for the marker?
-            // I'll make the default Geometry a "Plus" (+) which can be done as:
-            // Left -> Right, then ... need jump.
-            // I will return a Loop (Square) for safety.
+            // Default: Intersection -> X
             const pts = [];
             pts.push(new THREE.Vector3(-size / 2, -size / 2, 0));
             pts.push(new THREE.Vector3(size / 2, -size / 2, 0));
@@ -460,8 +472,11 @@ export class SnappingManager {
 
         const marker = new THREE.Line(geometry, this.markerMaterial);
         marker.position.copy(snap.point);
-        // Ensure marker is always on top?
         marker.renderOrder = 999;
+
+        // Visual distinction: stickies slightly transparent?
+        // But markerMaterial is shared.
+        // User requested Shape difference, which we did (+ vs O).
 
         this.markerGroup.add(marker);
     }

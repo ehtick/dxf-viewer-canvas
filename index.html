@@ -37,6 +37,33 @@
                     <input type="file" id="file-input" accept=".dxf,.dwg" hidden>
                     <span id="file-name" class="file-name" data-i18n="noFileSelected">No file selected</span>
                 </div>
+
+                <!-- Print Button (Moved) -->
+                <button class="icon-btn tool-btn ml-2" id="print-btn" title="Print" data-i18n-title="print">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 9V2h12v7" />
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                        <rect x="6" y="14" width="12" height="8" />
+                    </svg>
+                </button>
+
+                <div class="h-6 w-px bg-white/10 mx-2"></div>
+
+                <!-- Undo/Redo -->
+                <button class="icon-btn tool-btn disabled:opacity-30 disabled:cursor-not-allowed" id="undo-btn"
+                    title="Undo" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 7v6h6" />
+                        <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+                    </svg>
+                </button>
+                <button class="icon-btn tool-btn disabled:opacity-30 disabled:cursor-not-allowed" id="redo-btn"
+                    title="Redo" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 7v6h-6" />
+                        <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
+                    </svg>
+                </button>
             </div>
 
             <!-- Loader Overlay -->
@@ -154,14 +181,7 @@
                         </div>
                     </div>
 
-                    <!-- Print Button -->
-                    <button class="icon-btn tool-btn" id="print-btn" title="Print" data-i18n-title="print">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M6 9V2h12v7" />
-                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                            <rect x="6" y="14" width="12" height="8" />
-                        </svg>
-                    </button>
+
                 </div>
 
                 <!-- Layers Dropdown -->

@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 
 export class ObjectInfoManager {
-    constructor(viewer) {
+    constructor(viewer, measurementManager) {
         this.viewer = viewer;
+        this.measurementManager = measurementManager;
         this.container = document.getElementById('measurement-result');
     }
 
@@ -40,7 +41,16 @@ export class ObjectInfoManager {
             content += this.row(this.t('dimensionValue'), val);
             // Maybe Type?
             content += this.row(this.t('Type'), 'Dimension');
+
+            if (dimObj.userData.isUserDefined) {
+                content += this.getToleranceHTML(dimObj.userData.tolerance);
+            }
+
             this.container.innerHTML = content;
+
+            if (dimObj.userData.isUserDefined) {
+                this.bindToleranceEvents(dimObj);
+            }
             return;
         }
 
@@ -233,5 +243,93 @@ export class ObjectInfoManager {
             '<span>Y: ' + pt.y.toFixed(3) + '</span>' +
             '</div>' +
             '</div>';
+    }
+
+    getToleranceHTML(tolerance) {
+        const active = tolerance ? tolerance.active : false;
+        // User said: "Tolerans aktif değilse tolerans yoktur ve inputlar '0' dır."
+        // We show 0 if not active, or kept value? "inputlar 0 dır" implies we show 0.
+        const plus = (tolerance && active) ? tolerance.plus : 0;
+        const minus = (tolerance && active) ? tolerance.minus : 0;
+        const disabled = active ? '' : 'disabled';
+        const opacity = active ? 'opacity-100' : 'opacity-50 pointer-events-none';
+
+        return `
+        <div class="tolerance-section mt-3 pt-2 border-t border-white/10">
+            <div class="flex items-center justify-between mb-2">
+                 <span class="text-gray-200 font-medium text-sm">Tolerans</span>
+                 <input type="checkbox" id="tol-active" ${active ? 'checked' : ''} class="form-checkbox h-4 w-4 text-cyan-400 rounded bg-black/20 border-white/10 cursor-pointer accent-cyan-500">
+            </div>
+            <div id="tol-inputs" class="grid grid-cols-2 gap-2 transition-opacity duration-200 ${opacity}">
+                <div class="relative">
+                     <span class="absolute left-2 top-1.5 text-xs text-gray-500 font-bold">+</span>
+                     <input type="number" id="tol-plus" value="${plus}" step="0.01" class="w-full bg-black/20 border border-white/10 rounded pl-5 pr-2 py-1 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" placeholder="0.00" ${disabled}>
+                </div>
+                <div class="relative">
+                     <span class="absolute left-2 top-1.5 text-xs text-gray-500 font-bold">-</span>
+                     <input type="number" id="tol-minus" value="${minus}" step="0.01" class="w-full bg-black/20 border border-white/10 rounded pl-5 pr-2 py-1 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" placeholder="0.00" ${disabled}>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    bindToleranceEvents(object) {
+        const cb = document.getElementById('tol-active');
+        const iPlus = document.getElementById('tol-plus');
+        const iMinus = document.getElementById('tol-minus');
+        const divInputs = document.getElementById('tol-inputs');
+
+        if (!cb || !iPlus || !iMinus) return;
+
+        const updateObj = () => {
+            const tol = {
+                active: cb.checked,
+                plus: parseFloat(iPlus.value) || 0,
+                minus: parseFloat(iMinus.value) || 0
+            };
+            if (this.measurementManager) {
+                this.measurementManager.updateTolerance(object, tol);
+            }
+        };
+
+        cb.addEventListener('change', () => {
+            const isActive = cb.checked;
+            if (isActive) {
+                divInputs.classList.remove('opacity-50', 'pointer-events-none');
+                divInputs.classList.add('opacity-100');
+                iPlus.disabled = false;
+                iMinus.disabled = false;
+                // Keep default 0 or restore? Request says "inputlar 0 dır" when not active. 
+                // So when activating, they start at 0 (already 0).
+            } else {
+                divInputs.classList.add('opacity-50', 'pointer-events-none');
+                divInputs.classList.remove('opacity-100');
+                iPlus.disabled = true;
+                iMinus.disabled = true;
+                iPlus.value = 0;
+                iMinus.value = 0;
+            }
+            updateObj();
+        });
+
+        iPlus.addEventListener('input', () => {
+            // " + tolerans inputu değiştiğinde, - tolerans inputu onunla aynı olacak şekilde otomatik güncellenir."
+            // Only update minus if it hasn't been manually edited? 
+            // Or always? "dinamik olarak otomatik güncellenir".
+            // Usually this implies a "symmetric" convenience, but allows override?
+            // "Eş zamanlı olarak ölçümün toleransı güncellenir."
+            // If user types in Plus, update Minus to match.
+            // If user THEN types in Minus, it changes Minus (asymmetric).
+            // But if user goes back to Plus, does it overwrite Minus? 
+            // "onunla aynı olacak şekilde" implies strict linking OR convenience default.
+            // Let's implement strict following when Plus changes.
+            iMinus.value = iPlus.value;
+
+            updateObj();
+        });
+
+        iMinus.addEventListener('input', () => {
+            updateObj();
+        });
     }
 }
