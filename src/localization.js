@@ -149,7 +149,17 @@ export const translations = {
         "downloadDxf": "DXF İndir",
         "downloadConfirmTitle": "İndirmeyi Onayla",
         "downloadConfirmDesc": "Orijinal dosyanın dönüştürülmüş DXF versiyonunu indirmek üzeresiniz.",
-        "downloadBtn": "İndir"
+        "downloadBtn": "İndir",
+
+        // Clipboard
+        "clipboard": "Pano",
+        "clipboardEmpty": "Pano boş",
+        "selectionItem": "Seçim",
+        "itemsCount": "{count} öğe",
+        "clearAll": "TÜMÜNÜ TEMİZLE",
+        "copiedToClipboard": "Panoya kopyalandı",
+        "closeClipboard": "Panoyu Kapat",
+        "valuesLogged": "Değerler konsola yazdırıldı"
     },
     en: {
         // Header / File
@@ -296,7 +306,17 @@ export const translations = {
         "downloadDxf": "Download DXF",
         "downloadConfirmTitle": "Confirm Download",
         "downloadConfirmDesc": "You are about to download the converted DXF version of the original file.",
-        "downloadBtn": "Download"
+        "downloadBtn": "Download",
+
+        // Clipboard
+        "clipboard": "Clipboard",
+        "clipboardEmpty": "Clipboard empty",
+        "selectionItem": "Selection",
+        "itemsCount": "{count} items",
+        "clearAll": "CLEAR ALL",
+        "copiedToClipboard": "Copied to clipboard",
+        "closeClipboard": "Close Clipboard",
+        "valuesLogged": "Values logged to console"
     }
 };
 

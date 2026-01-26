@@ -264,6 +264,14 @@
 
 
 
+                <button class="icon-btn tool-btn" id="clipboard-toggle-btn" title="Clipboard"
+                    data-i18n-title="clipboard">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                    </svg>
+                </button>
+
                 <div id="language-selector-container" class="relative"></div>
             </div>
         </header>
@@ -472,6 +480,42 @@
                                     class="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-gray-500 pointer-events-none">°</span>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Clipboard Sidebar (Right) -->
+            <aside class="clipboard-sidebar translate-x-full" id="clipboard-sidebar">
+                <div class="sidebar-header flex justify-between items-center mb-4 px-1">
+                    <h3 class="text-sm font-semibold text-white">Clipboard</h3>
+                    <button id="clipboard-close-btn"
+                        class="p-1 rounded-md hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                        title="Close Clipboard" data-i18n-title="closeClipboard">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M18 6L6 18M6 6l12 12" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="panel flex-1 flex flex-col min-h-0">
+                    <div class="panel-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+                                stroke-width="2" />
+                            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" stroke-width="2" />
+                        </svg>
+                        <h3 data-i18n="clipboard">Kopyalananlar</h3>
+                    </div>
+                    <div class="panel-content flex-1 overflow-y-auto p-2" id="clipboard-list">
+                        <!-- Items will be injected here -->
+                    </div>
+                    <div class="p-2 border-t border-white/10">
+                        <button id="clipboard-clear-btn"
+                            class="w-full py-1 text-xs text-red-400 hover:text-red-300 transition-colors uppercase font-medium tracking-wide"
+                            data-i18n="clearAll">
+                            Clear All
+                        </button>
                     </div>
                 </div>
             </aside>

@@ -46,6 +46,16 @@ export class WeightManager {
         this.isActive = false;
 
         this.templateRotation = 0;
+
+        // Info Table Template
+        this.infoTableTemplate =
+            `+--------------+----------+----------------+----------+------------------+----------+
+| YUDA-NO      | %val-yudano%       | MALZEME        | %val-metarial%   | TEMPER          | %val-temper%         |
++--------------+----------+----------------+----------+------------------+----------+
+| DU (mm)      | %val-diameter%     | ALAN (mm²)     | %val-area%       | GRAMAJ (kg/m)   | %val-veigth%         |
++--------------+----------+----------------+----------+------------------+----------+
+| ŞEK. FAKTÖRÜ | %val-shapefactor%  | DIŞ ÇEVRE (mm) | %val-perimeter%  | TOP. ÇEVRE (mm) | %val-totalperimeter% |
++--------------+----------+----------------+----------+------------------+----------+`;
     }
 
     init() {
@@ -319,97 +329,85 @@ export class WeightManager {
         }
 
         console.log('[WeightManager] Entering template placement mode (NEW WORKFLOW)');
-        console.log('[WeightManager] Selected objects count:', this.selectedObjects?.length);
 
-        this.templateMode = true;
-        this.scrollSteps = 0;
-        this.templateScale = 1.0;
-        this.templateRotation = 0;
-        this._hasLoggedPosition = false; // Reset debug flag
-
-        // Step 1: Clone selected entities into floatingGroup
-        this.floatingGroup = new THREE.Group();
-        this.floatingGroup.name = 'FloatingGeometries';
-
-        // Clone selected objects (previewMesh area)
+        // Step 1: Clone selected entities (to be preserved as content)
+        const contentObjects = [];
         if (this.selectedObjects && this.selectedObjects.length > 0) {
             for (const obj of this.selectedObjects) {
                 const clone = obj.clone();
                 clone.userData.isFloatingClone = true;
 
-                // Sanitize Material:
-                // If original was highlighted, it has a cloned material with Cyan color.
-                // We want to restore the original color and make it a "permanent" material.
                 if (obj.userData.originalColor) {
-                    // Clone material to detach from original
                     clone.material = clone.material.clone();
-
-                    // Restore original color
                     clone.material.color.copy(obj.userData.originalColor);
-
-                    // Sync userData.originalColor to match the restored material color exactly
-                    // This fixes issues where JSON serialization in clone() might convert Color to plain object,
-                    // or if originalColor was stale. We want the UNHOVER color to be what we see now.
                     clone.userData.originalColor = clone.material.color.clone();
-
-                    // Remove "isClonedMaterial" flag so SceneViewer treats it as a normal object
-                    // (This ensures auto-contrast logic works: Black/White swapping)
                     clone.userData.isClonedMaterial = false;
                     delete clone.userData.isClonedMaterial;
-
-                    // Also ensure we don't carry over temporary highlight flags if any
-                    // But keep crucial data like entity type
                 }
-
-                this.floatingGroup.add(clone);
+                contentObjects.push(clone);
             }
-        } else {
-            console.warn('[WeightManager] No selected objects to clone for placement!');
         }
 
-        // Calculate floating group center
-        if (this.floatingGroup.children.length > 0) {
+        // 2. Clear Scene & Load Template (Specific to Template Mode)
+        this.clearDxfGroup();
+        await this.loadTemplateDXF(this.selectedTemplatePath); // This puts template into dxfGroup
+
+        // 3. Start Placement of Floating Group
+        this.startPlacement(contentObjects);
+
+        // Zoom extents for template mode
+        this.viewer.zoomExtents();
+    }
+
+    // Generic Placement Logic (Used for Template Content AND Clipboard Paste)
+    startPlacement(objectsToPlace, cachedStats = null) {
+        this.templateMode = true; // Use same mode flag for events
+        this.scrollSteps = 0;
+        this.templateScale = 1.0;
+        this.templateRotation = 0;
+        this._hasLoggedPosition = false;
+
+        // Store cached stats for table generation
+        this.pendingPlacementStats = cachedStats;
+
+        this.floatingGroup = new THREE.Group();
+        this.floatingGroup.name = 'FloatingGeometries';
+
+        if (objectsToPlace && objectsToPlace.length > 0) {
+            objectsToPlace.forEach(obj => {
+                // Ensure they are marked for floating
+                obj.userData.isFloatingClone = true;
+                this.floatingGroup.add(obj);
+            });
+
+            // Re-center logic
             const floatBox = new THREE.Box3().setFromObject(this.floatingGroup);
             this.floatingCenter = floatBox.getCenter(new THREE.Vector3());
-            console.log(`[WeightManager] Re-centering ${this.floatingGroup.children.length} entities. Center:`, this.floatingCenter);
 
-            // Re-center all children so the group origin (0,0,0) is at the geometry center
             for (const child of this.floatingGroup.children) {
                 child.position.sub(this.floatingCenter);
                 child.updateMatrix();
             }
-            // After re-centering, the group's visual center is effectively (0,0,0)
-            // We store the original center to restore absolute position if needed, 
-            // but for placement we just need relative logic.
-        } else {
-            console.warn('[WeightManager] Floating group is empty!');
-            this.floatingCenter = new THREE.Vector3(0, 0, 0);
         }
 
-        // Step 2: Clear dxfGroup (remove all existing entities)
-        this.clearDxfGroup();
-
-        // Step 3: Load template DXF into dxfGroup (fixed position)
-        await this.loadTemplateDXF(this.selectedTemplatePath);
-
-        // Step 4: Add floating group to scene (will follow mouse)
         this.viewer.scene.add(this.floatingGroup);
-        console.log('[WeightManager] Floating group added to scene');
 
-        // Show scale panel, hide weight panel
+        // UI
         if (this.panel) this.panel.classList.add('hidden');
         if (this.scalePanel) this.scalePanel.classList.remove('hidden');
 
-        // Start mouse following (floating geometries follow mouse)
         this.startMouseFollowing();
-
-        // Update scale display
         this.updateScaleDisplay();
 
-        // Fit all to view
-        this.viewer.zoomExtents();
-
-        console.log('[WeightManager] Template placement mode active - geometries follow mouse');
+        // Only zoom extents if we are in template mode (cleared scene)? 
+        // Or for paste too? For paste, maybe we shouldn't zoom extents as it might be annoying.
+        // But for now, let's keep it consistent.
+        // actually, if we paste, we might want to start "at mouse".
+        // startMouseFollowing will move it to mouse immediately on first move.
+        // But zoomExtents might be disorienting for Paste.
+        // Let's Skip zoomExtents here, caller can do it if needed.
+        // ORIGINAL code did zoomExtents.
+        // I'll add it back for now to match behavior.
     }
 
     clearDxfGroup() {
@@ -638,28 +636,80 @@ export class WeightManager {
             scale: scale
         });
 
-        // Merge floating entities into dxfGroup with scaling applied
+        // Resolve Stats to use (Pending from Clipboard OR Last Calculated)
+        let statsToUse = this.pendingPlacementStats || this.lastCalculatedStats;
+
+        console.log('[WeightManager] Resolving stats for table:', {
+            pending: this.pendingPlacementStats,
+            last: this.lastCalculatedStats,
+            resolved: statsToUse
+        });
+
+        // 1. Calculate Info Table Position (Before Merge logic destroys floatingGroup structure)
+        let tablePosition = null;
+        if (statsToUse) {
+            try {
+                const box = new THREE.Box3().setFromObject(this.floatingGroup);
+                tablePosition = new THREE.Vector3(
+                    (box.min.x + box.max.x) / 2,
+                    box.min.y,
+                    0
+                );
+                // Add margin
+                tablePosition.y -= (10 * scale);
+            } catch (e) {
+                console.warn('[WeightManager] Failed to calculate box for table:', e);
+            }
+        }
+
+        // 2. Merge floating entities into dxfGroup
         this.mergeFloatingIntoDxfGroup(position, scale);
 
-        // Update template placeholders (text in template)
-        this.updateTemplatePlaceholders();
-
-        // Store scale value for printing
+        // 3. Update Scale Values
+        // 3. Update Scale Values
         this.calculatedValues['val-scale'] = scale >= 1 ?
             `${scale.toFixed(1)}:1` :
             `1:${(1 / scale).toFixed(1)}`;
 
+        // 5. Generate Info Table
+        if (statsToUse && tablePosition) {
+            // Update scale in stats
+            statsToUse.numericScale = scale;
+
+            // Generate Table
+            console.log('[WeightManager] Generating info table at:', tablePosition);
+            const tableMesh = this.createTableMesh(statsToUse, tablePosition, scale);
+            if (tableMesh) {
+                this.viewer.dxfGroup.add(tableMesh);
+                console.log('[WeightManager] Info table added to dxfGroup successfully');
+            } else {
+                console.warn('[WeightManager] Info table mesh creation returned null');
+            }
+
+            // Set as last calculated
+            this.lastCalculatedStats = statsToUse;
+        } else {
+            console.log('[WeightManager] Skipping table generation (no stats or position)');
+            // Just update scale in generic state if needed
+            if (!this.lastCalculatedStats) {
+                this.lastCalculatedStats = { numericScale: scale };
+            } else {
+                this.lastCalculatedStats.numericScale = scale;
+            }
+        }
+
+        // Clear pending
+        this.pendingPlacementStats = null;
+
         // Exit placement mode
         this.templateMode = false;
 
-        // Show weight panel again, hide scale panel
+        // Show weight panel if we have valid stats, or assume user wants to see it
         if (this.panel) this.panel.classList.remove('hidden');
         if (this.scalePanel) this.scalePanel.classList.add('hidden');
 
-        // Fit to view
-        this.viewer.zoomExtents();
-
-        console.log('[WeightManager] Placement complete - OSNAP works on all entities');
+        // Auto-select pasted objects logic is handled inside merge -> update call?
+        // mergeFloatingIntoDxfGroup calls this.update(addedObjects)
     }
 
     mergeFloatingIntoDxfGroup(position, scale) {
@@ -667,6 +717,9 @@ export class WeightManager {
             console.warn('[WeightManager] Cannot merge floating: missing floatingGroup or dxfGroup');
             return;
         }
+
+        // Capture added objects for selection
+        const addedObjects = [];
 
         // Collect all children to transfer
         // Note: we can't iterate over .children directly while modifying it (attach removes child)
@@ -684,6 +737,8 @@ export class WeightManager {
             child.userData.isPlacedGeometry = true;
             child.userData.placementScale = scale;
             child.userData.placementRotation = this.templateRotation; // Store rotation for record
+
+            addedObjects.push(child);
         }
 
         // Remove floating group from scene
@@ -691,6 +746,15 @@ export class WeightManager {
         this.floatingGroup = null;
 
         console.log(`[WeightManager] Merged ${children.length} floating entities into dxfGroup using attach`);
+
+        // Auto-select pasted objects
+        // We need to notify main app or use callback.
+        // `onChainSelectCallback` is for generic actions.
+        // But `onCloseCallback` is for closing.
+        // We can just call `this.update(addedObjects)` to trigger weight calc on them immediately?
+        // But better to let Main App handle selection state.
+        // For now, let's just trigger internal update so the panel shows stats for pasted items.
+        this.update(addedObjects);
     }
 
     mergeTemplateIntoDxfGroup(position, scale) {
@@ -730,187 +794,161 @@ export class WeightManager {
         console.log(`[WeightManager] Merged ${children.length} entities into dxfGroup`);
     }
 
-    updateTemplatePlaceholders() {
-        if (!this.viewer.dxfGroup) return;
+    createTableMesh(stats, position, scale) {
+        if (!stats) return null;
 
-        console.log('[WeightManager] === TEMPLATE PLACEHOLDER DEBUG ===');
+        // 1. Prepare Data
+        const material = MATERIALS.find(m => m.id === this.currentMaterialId) || MATERIALS[0];
+        const temper = TEMPERS.find(t => t.id === this.currentTemperId) || { name: '-' };
 
-        // Collect calculated values
+        // Raw values map
         const values = {
-            'val-mandrel': document.getElementById('val-mandrel')?.textContent || '0',
-            'val-area': document.getElementById('val-area')?.textContent || '0.00',
-            'val-weight': document.getElementById('val-weight')?.textContent || '0.000',
-            'val-diameter': document.getElementById('val-diameter')?.textContent || '0.00',
-            'val-perimeter': document.getElementById('val-perimeter')?.textContent || '0.00',
-            'val-totalperimeter': document.getElementById('val-totalperimeter')?.textContent || '0.00',
-            'val-shapefactor': document.getElementById('val-shapefactor')?.textContent || '0.00',
-            'val-scale': this.templateScale >= 1 ?
-                `${this.templateScale.toFixed(1)}:1` :
-                `1:${(1 / this.templateScale).toFixed(1)}`
+            'val-yudano': ' - ',
+            'val-metarial': material.name,
+            'val-temper': temper.name,
+            'val-diameter': (stats.diameter || 0).toFixed(2),
+            'val-area': (stats.netArea || 0).toFixed(2),
+            'val-veigth': (stats.weight || 0).toFixed(3),
+            'val-shapefactor': (stats.shapeFactor || 0).toFixed(2),
+            'val-perimeter': (stats.outerPerimeter || 0).toFixed(2),
+            'val-totalperimeter': (stats.totalPerimeter || 0).toFixed(2)
         };
 
-        console.log('[WeightManager] Placeholder values:', values);
-        this.calculatedValues = values;
+        // 2. Align Table Text
+        const textContent = this.formatTable(this.infoTableTemplate, values);
 
-        // Debug: List all objects in template
-        let textCount = 0;
-        let meshCount = 0;
-        let totalChildren = 0;
-
-        // Iterate over dxfGroup instead of templateGroup
-        this.viewer.dxfGroup.traverse((obj) => {
-            totalChildren++;
-
-            // Only process template entities
-            if (!obj.userData.isTemplateEntity) return;
-
-            // Log any mesh (text is created as Mesh in DxfLoader)
-            if (obj.isMesh) {
-                meshCount++;
-            }
-
-            // Log any object with TEXT/MTEXT in userData
-            if (obj.userData.type === 'TEXT' || obj.userData.type === 'MTEXT') {
-                textCount++;
-                console.log(`[WeightManager] Found TEXT entity:`, {
-                    isMesh: obj.isMesh,
-                    isSprite: obj.isSprite,
-                    type: obj.type,
-                    visible: obj.visible,
-                    text: obj.userData.entity?.text
-                });
-            }
-        });
-
-        console.log(`[WeightManager] Template children: ${totalChildren}, Meshes: ${meshCount}, TextEntities: ${textCount}`);
-
-        // If no TEXT entities found, log all object types for debugging
-        if (textCount === 0) {
-            console.log('[WeightManager] No TEXT entities found. Object types in template:');
-            this.viewer.dxfGroup.traverse((obj) => {
-                if (obj.userData.isTemplateEntity && obj.userData.type) {
-                    console.log(`  - ${obj.userData.type} (visible: ${obj.visible})`);
-                }
-            });
-        }
-
-        // Find TEXT/MTEXT objects in template and replace placeholders
-        // DxfLoader creates Mesh for TEXT, not Sprite
-        this.viewer.dxfGroup.traverse((obj) => {
-            // Only process template entities
-            if (!obj.userData.isTemplateEntity) return;
-
-            if (obj.isMesh && (obj.userData.type === 'TEXT' || obj.userData.type === 'MTEXT')) {
-                // Get original text
-                let text = obj.userData.originalText || obj.userData.entity?.text || '';
-
-                // Replace %placeholder% patterns
-                let replaced = false;
-
-                // 1. Standard Placeholders (val-area, val-weight, etc.)
-                for (const [key, value] of Object.entries(values)) {
-                    const pattern = new RegExp(`%${key}%`, 'gi');
-                    if (pattern.test(text)) {
-                        text = text.replace(pattern, value);
-                        replaced = true;
-                    }
-                }
-
-                // 2. Calculated PxF Placeholders (%5x1%, %10x6% etc.)
-                // Formula: (Area / P_Value) / F -> Integer
-                const P_CONSTANTS = {
-                    '5': 13893,
-                    '6': 19600,
-                    '8': 34612,
-                    '10': 53100
-                };
-
-                // Regex to find %NxM% where N is one of P keys and M is 1-9
-                // capturing group 1: P (5, 6, 8, 10)
-                // capturing group 2: F (1, 2, 3...)
-                const pxfPattern = /%(\d+)x(\d+)%/g;
-
-                if (pxfPattern.test(text)) {
-                    const areaVal = parseFloat(values['val-area']); // "123.45" -> 123.45
-
-                    text = text.replace(pxfPattern, (match, pKey, fKey) => {
-                        const pVal = P_CONSTANTS[pKey];
-                        const fVal = parseInt(fKey, 10);
-
-                        if (pVal && !isNaN(fVal) && fVal > 0 && !isNaN(areaVal)) {
-                            // Calculation: (P / Area) / F
-                            // Example: P=13893 (for 5), Area=100000, F=1 => 0.13 => 0
-                            const rawResult = (pVal / areaVal) / fVal;
-                            const result = Math.round(rawResult);
-
-                            replaced = true;
-                            // Return integer as string
-                            return result.toString();
-                        }
-
-                        // If invalid P or calculation fails, return original match (leave placeholder)
-                        return match;
-                    });
-                }
-
-                if (replaced) {
-                    console.log(`[WeightManager] Updating placeholder text to: "${text}"`);
-                    obj.userData.updatedText = text;
-
-                    // Regenerate texture with new text
-                    this.regenerateTextTexture(obj, text);
-                }
-            }
-        });
-
-        console.log('[WeightManager] === END PLACEHOLDER DEBUG ===');
+        // 3. Generate Texture (Monospace)
+        return this.generateTableTexture(textContent, position, scale);
     }
 
-    regenerateTextTexture(mesh, newText) {
-        // Get mesh properties
-        const height = mesh.userData.entity?.height || 2.5;
+    formatTable(template, values) {
+        const lines = template.split('\n');
 
-        // Create canvas texture with new text
+        // 1. Detect Column Widths from the first separator line (starts with +)
+        const separatorLine = lines.find(line => line.trim().startsWith('+'));
+        if (!separatorLine) return template; // Fallback
+
+        // Parse widths: +-----+-------+ -> lengths of segments between +
+        const widths = separatorLine.split('+').slice(1, -1).map(s => s.length);
+
+        // 2. Process Data Rows
+        return lines.map(line => {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('|')) { // Data row
+                // Split by | but keep empty strings for start/end
+                const cells = line.split('|').slice(1, -1);
+
+                // Reconstruct row
+                let newLine = '|';
+                cells.forEach((cell, index) => {
+                    const width = widths[index];
+                    if (width === undefined) {
+                        newLine += cell + '|'; // Should format even if mismatch, but for now append
+                        return;
+                    }
+
+                    // Check for placeholder
+                    let content = cell;
+                    for (const [key, val] of Object.entries(values)) {
+                        if (content.includes(`%${key}%`)) {
+                            content = content.replace(`%${key}%`, val);
+                        }
+                    }
+
+                    // Trim and Pad
+                    // Check original alignment? Usually left-align for text, right for numbers?
+                    // User's template has mixed. Let's assume Left Align for now or preserve leading space?
+                    // Simple approach: Center or Left Pad.
+                    // Given the user padded "val-10", maybe they want fixed alignment.
+                    // Let's try to center the content in the cell width. Or Left align with 1 space margin.
+
+                    // Better: Trim, then padEnd (Left align)
+                    const cleanContent = content.trim();
+                    // Ensure 1 space padding left if possible
+                    const padded = (' ' + cleanContent).padEnd(width, ' ');
+
+                    newLine += padded + '|';
+                });
+                return newLine;
+            }
+            return line; // Return separators as is
+        }).join('\n');
+    }
+
+    generateTableTexture(text, position, scale) {
+        console.log('[WeightManager] Generating Table Texture...');
+        const lines = text.split('\n');
+
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        const fontSizePx = 80;
 
-        ctx.font = `Bold ${fontSizePx}px Arial`;
-        const metrics = ctx.measureText(newText);
-        const textWidth = metrics.width;
-        const textHeight = fontSizePx * 1.4;
+        // High resolution for sharpness
+        const fontSizePx = 64;
+        const lineHeightPx = fontSizePx * 1.2;
+        ctx.font = `bold ${fontSizePx}px "Courier New", monospace`; // Monospace is critical
 
-        canvas.width = textWidth + 20;
-        canvas.height = textHeight;
+        // Measure widest line
+        let maxWidth = 0;
+        lines.forEach(line => {
+            const w = ctx.measureText(line).width;
+            if (w > maxWidth) maxWidth = w;
+        });
+
+        // Dimensions
+        canvas.width = maxWidth + 40; // Padding
+        canvas.height = (lines.length * lineHeightPx) + 40;
+
+        console.log(`[WeightManager] Table Canvas Size: ${canvas.width}x${canvas.height}`);
+
+        // Render Background (Transparent)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0)';
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.font = `Bold ${fontSizePx}px Arial`;
 
-        // Use white color for visibility
+        // Render Text (White)
+        ctx.font = `bold ${fontSizePx}px "Courier New", monospace`;
         ctx.fillStyle = '#FFFFFF';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(newText, 10, canvas.height / 2);
+        ctx.textBaseline = 'top';
 
-        // Update texture
-        const newTexture = new THREE.CanvasTexture(canvas);
-        newTexture.minFilter = THREE.LinearFilter;
-        newTexture.magFilter = THREE.LinearFilter;
+        lines.forEach((line, i) => {
+            ctx.fillText(line, 20, 20 + (i * lineHeightPx));
+        });
 
-        // Dispose old texture
-        if (mesh.material.map) {
-            mesh.material.map.dispose();
-        }
-        mesh.material.map = newTexture;
-        mesh.material.needsUpdate = true;
+        // Texture
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        // texture.needsUpdate = true; // CanvasTexture auto-updates but good practice if reused? Not reused here.
 
-        // Update geometry size
+        // Create Plane
+        // World Line Height calibration
+        const worldLineHeight = 5.0 * scale;
         const aspect = canvas.width / canvas.height;
-        const w = height * aspect;
-        const h = height;
+        const totalHeight = worldLineHeight * lines.length;
+        const totalWidth = totalHeight * aspect;
 
-        mesh.geometry.dispose();
-        mesh.geometry = new THREE.PlaneGeometry(w, h);
-        mesh.geometry.translate(w / 2, 0, 0);
+        const geom = new THREE.PlaneGeometry(totalWidth, totalHeight);
+        const mat = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide,
+            depthTest: false // Ensure it renders on top if there's Z-fighting
+        });
+
+        const mesh = new THREE.Mesh(geom, mat);
+
+        // Position
+        mesh.position.copy(position);
+        mesh.position.y -= totalHeight / 2;
+        mesh.position.z += 0.1; // Slight Z offset to avoid fighting with grid/zero plane
+
+        // Render Order (to draw on top of other transparents)
+        mesh.renderOrder = 999;
+
+        // Store user data
+        mesh.userData.isInfoTable = true;
+        mesh.userData.isPlacedGeometry = true;
+        console.log('[WeightManager] Table Mesh created at:', mesh.position);
+        return mesh;
     }
 
     restoreObjectVisibility() {
@@ -1477,6 +1515,17 @@ export class WeightManager {
         const perimeterCm = totalPerimeter / 10;
         const shapeFactor = weight > 0 ? perimeterCm / weight : 0;
 
+        // Store stats for external access (e.g. Clipboard)
+        this.lastCalculatedStats = {
+            netArea,
+            outerPerimeter,
+            totalPerimeter,
+            weight,
+            shapeFactor,
+            mandrelCount,
+            diameter: this.boundingCircle ? this.boundingCircle.diameter : 0 // will be updated below
+        };
+
         this.updateDOM('val-mandrel', mandrelCount);
         this.updateDOM('val-area', netArea.toFixed(2));
         this.updateDOM('val-weight', weight.toFixed(3));
@@ -1491,6 +1540,12 @@ export class WeightManager {
         if (this.previewMesh && this.previewMesh.geometry) {
             const circleData = this.calculateBoundingCircleFromMesh(this.previewMesh.geometry);
             this.boundingCircle = circleData;
+
+            // Update the stats with correct diameter
+            if (this.lastCalculatedStats) {
+                this.lastCalculatedStats.diameter = circleData.diameter;
+            }
+
             this.updateDOM('val-diameter', circleData.diameter.toFixed(2));
 
             // Re-visualize to add debug circle

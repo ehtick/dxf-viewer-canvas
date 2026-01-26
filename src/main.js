@@ -8,6 +8,7 @@ import { ObjectInfoManager } from './object-info-manager.js';
 import { WeightManager } from './weight-manager.js';
 import { CommandHistory } from './command-history.js';
 import { CmdAddMeasurement, CmdDelete } from './commands.js';
+import { ClipboardManager } from './clipboard-manager.js';
 
 
 class DXFViewerApp {
@@ -67,6 +68,8 @@ class DXFViewerApp {
             }
         );
         this.weightManager.init();
+
+        this.clipboardManager = new ClipboardManager(this.viewer, this.weightManager, this.languageManager);
 
         this.setupUIEvents();
         this.updateStatus(this.languageManager.translate('ready'));
@@ -312,8 +315,6 @@ class DXFViewerApp {
         // For now, onKeyDown handles ESC for both.
 
 
-        window.addEventListener('keydown', (e) => this.onKeyDown(e));
-
         // Sidebar controls
         const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
         const sidebarFloatingToggle = document.getElementById('sidebar-floating-toggle');
@@ -375,6 +376,13 @@ class DXFViewerApp {
         if (e.ctrlKey && (e.key === 'y' || e.key === 'Y')) {
             e.preventDefault();
             this.history.redo();
+            return;
+        }
+
+        // Copy (Ctrl+C)
+        if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
+            e.preventDefault(); // Prevent browser copy
+            this.copySelection();
             return;
         }
 
@@ -441,6 +449,13 @@ class DXFViewerApp {
         );
 
         this.history.execute(cmd);
+    }
+
+    copySelection() {
+        if (this.clipboardManager && this.selectedObjects.length > 0) {
+            this.clipboardManager.copy(this.selectedObjects);
+            this.updateStatus(this.languageManager.translate('copiedToClipboard') || 'Copied to clipboard');
+        }
     }
 
     updateUndoRedoUI(canUndo, canRedo) {

@@ -919,3 +919,40 @@ select option {
     color: #22d3ee;
     /* Match text-cyan-400 */
 }
+
+/* Clipboard Sidebar */
+.clipboard-sidebar {
+    width: 280px;
+    background: var(--bg-glass);
+    backdrop-filter: blur(10px);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-md);
+    transition: transform var(--transition-normal);
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    /* translate-x-full class handles hiding */
+    transform: translateX(0);
+}
+
+.clipboard-sidebar.translate-x-full {
+    transform: translateX(100%);
+}
+
+.clipboard-item {
+    /* Styles handled in JS or utility classes, but refining here */
+    border: 1px solid var(--border-color);
+}
+
+.clipboard-item:hover {
+    border-color: var(--border-hover);
+}
+
+/* Fix for Clipboard List Height */
+#clipboard-list {
+    max-height: none !important;
+}
