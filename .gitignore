@@ -11,3 +11,6 @@ dist/
 *.dwl2
 *.dxf
 *.dwg
+
+# AdSense
+ads.txt

@@ -1,6 +1,6 @@
 # DXF Viewer
 
-A powerful, web-based DXF file viewer built with Vanilla JavaScript and HTML5 Canvas. This application allows users to view, analyze, and measure AutoCAD DXF files directly in the browser with a modern, dark-themed UI.
+A powerful, web-based DXF/DWG file viewer built with Three.js and Vanilla JavaScript. This application allows users to view, analyze, measure, and calculate weights for AutoCAD files directly in the browser with a modern, dark-themed UI.
 
 [**🚀 Live Demo**](https://izgi.me/site/dxf-viewer)
 
@@ -8,28 +8,66 @@ A powerful, web-based DXF file viewer built with Vanilla JavaScript and HTML5 Ca
 
 ## Features
 
+### 📂 File Management
+- **Multi-Tab Support**: Work with multiple DXF/DWG files simultaneously in separate tabs.
+- **DWG Conversion**: Automatic conversion of DWG files to DXF format via cloud API.
+- **Drag & Drop**: Simply drag and drop files to open them.
+- **Template Library**: Load pre-defined templates for quick access to common shapes and components.
+- **Start Page**: Clean welcome screen with quick access to new files, templates, and file uploads.
+
 ### 🔍 Viewing & Navigation
-- **High-Performance Rendering**: Efficiently renders complex DXF drawings using HTML5 Canvas.
-- **Zoom & Pan**: Smooth zooming and panning capabilities.
-- **Zoom Tools**:
-  - **Zoom Extents**: Instantly fit the entire drawing to the screen.
-  - **Zoom Window**: Draw a rectangle to zoom into a specific area.
+- **3D Rendering**: High-performance rendering using Three.js WebGL renderer.
+- **Orthographic Camera**: CAD-optimized orthographic projection for accurate measurements.
+- **Zoom & Pan**: Smooth zooming (mouse wheel) and panning (middle-click drag).
+- **Zoom Extents**: Instantly fit the entire drawing to the screen.
 - **Layer Management**: Toggle visibility of individual layers with a color-coded panel.
+- **Background Color**: Switch between dark and light backgrounds.
 
 ### 📐 Measurements & Analysis
-- **Advanced Snapping (OSNAP)**: Intelligent object snapping to Endpoints, Midpoints, Centers, Intersections, and Nearest points.
+- **Advanced Snapping (OSNAP)**: Intelligent object snapping to:
+  - Endpoints
+  - Midpoints
+  - Centers (for arcs and circles)
+  - Intersections
+  - Nearest points
 - **Measurement Tools**:
-  - **Distance**: measure length between two points.
-  - **Angle**: Measure angle between two lines or 3 points.
-  - **Radius/Diameter**: Measure circles and arcs.
-  - **Area**: Calculate area of closed loops, polylines, and circles.
-- **Smart Tracking**: Virtual guides for horizontal, vertical, and perpendicular alignments.
+  - **Linear Distance**: Measure length between two points with OSNAP support.
+  - **Angle**: Measure angle between two lines.
+  - **Radius**: Measure radius of circles and arcs with dynamic arrow placement.
+  - **Diameter**: Measure diameter of circles and arcs.
+- **Persistent Measurements**: Measurements remain visible and are saved per tab.
+- **Scaled Measurements**: Automatically accounts for object scaling and transformations.
+- **Tab-Isolated Measurements**: Each tab maintains its own set of measurements.
+
+### ⚖️ Weight Calculation
+- **Material Database**: Comprehensive database of materials (Steel, Aluminum, Stainless Steel, etc.).
+- **Temper & Pres Selection**: Choose specific material properties and processing methods.
+- **Figure Types**: Support for different cross-section shapes (rectangular, circular, etc.).
+- **Thickness Input**: Specify material thickness for accurate weight calculations.
+- **Floating Info Tables**: Dynamic info tables attached to selected geometries showing:
+  - Dimensions (width, height, radius, etc.)
+  - Weight calculations
+  - Material properties
+- **Print Selection**: Select and print specific geometries with their weight information.
+
+### 📋 Clipboard & Templates
+- **Clipboard Manager**: Copy, paste, and manage drawing elements.
+- **Template Placement**: Place template geometries with:
+  - **Scaling**: Adjust size using mouse wheel
+  - **Rotation**: Rotate using Ctrl + mouse wheel
+  - **Visual Preview**: See the template before placing it
+- **Scale Panel**: Real-time display of current scale and rotation values.
 
 ### 🛠 Tools & UI
-- **Entity Tree**: Hierarchical view of drawing entities (Blocks, Polylines, Layers) with "Eye" toggles.
 - **Property Inspector**: View detailed properties (Coordinates, Length, Layer, etc.) of selected objects.
 - **Multi-Language Support**: Fully localized interface (English & Turkish).
-- **Dark Mode**: Sleek, professional dark interface optimized for CAD workflows.
+- **Undo/Redo**: Full command history with undo/redo support.
+- **Keyboard Shortcuts**:
+  - `ESC`: Cancel current operation or deselect
+  - `Delete`: Delete selected objects
+  - `Ctrl+C`: Copy selection
+  - `Ctrl+Z`: Undo
+  - `Ctrl+Y`: Redo
 
 ## Installation & Usage
 
@@ -58,8 +96,29 @@ A powerful, web-based DXF file viewer built with Vanilla JavaScript and HTML5 Ca
 ## Technologies
 
 - **Core**: HTML5, CSS3 (Tailwind CSS), JavaScript (ES6+)
+- **3D Rendering**: [Three.js](https://threejs.org/) with OrbitControls
 - **Parsing**: [dxf-parser](https://github.com/gdsestimating/dxf-parser)
-- **Rendering**: Custom Canvas 2D Renderer
+- **DWG Conversion**: Cloud-based conversion API
+
+## Project Structure
+
+```
+dxf-viewer/
+├── index.html              # Main HTML file
+├── styles.css              # Global styles and theme
+├── src/
+│   ├── main.js            # Application entry point
+│   ├── scene-viewer.js    # Three.js scene management
+│   ├── dxf-loader.js      # DXF parsing and entity generation
+│   ├── measurement-manager.js  # Measurement tools
+│   ├── weight-manager.js  # Weight calculation system
+│   ├── tab-manager.js     # Multi-tab functionality
+│   ├── clipboard-manager.js    # Clipboard operations
+│   ├── snapping-manager.js     # OSNAP system
+│   ├── localization.js    # Multi-language support
+│   └── ...
+└── README.md
+```
 
 ## License
 

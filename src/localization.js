@@ -24,6 +24,8 @@ export const translations = {
         "uploadFile": "Dosya Yükle",
         "newFile": "Yeni Dosya",
         "templates": "Şablonlar",
+        "clipboardTitle": "Pano",
+
         // Tools
         "measureDistance": "Mesafe Ölç",
         "measureAngle": "Açı Ölç",
@@ -198,7 +200,7 @@ export const translations = {
         "layers": "Layers",
         "settings": "Settings",
         "fitView": "Fit",
-
+        "clipboardTitle": "Clipboard",
         // Tool Instructions
         "instrDistance": "Click two points to measure distance",
         "instrAngle": "Click two lines to measure angle between them",
