@@ -142,6 +142,16 @@ export class TabManager {
             // Caller handles populating the group
         }
 
+        // Enable measurement tools for new empty tabs
+        const toolIds = ['tool-distance', 'tool-angle', 'tool-radius', 'tool-diameter', 'tool-area', 'weight-btn', 'print-btn'];
+        toolIds.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.removeAttribute('disabled');
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+
         return tabState;
     }
 

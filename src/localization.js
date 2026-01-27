@@ -21,7 +21,9 @@ export const translations = {
         "sidebarTitle": "Özellikler",
         "clipboardTitle": "Pano",
         "templatesDesc": "Şablon dosyasını yükleyin",
-
+        "uploadFile": "Dosya Yükle",
+        "newFile": "Yeni Dosya",
+        "templates": "Şablonlar",
         // Tools
         "measureDistance": "Mesafe Ölç",
         "measureAngle": "Açı Ölç",
@@ -185,6 +187,9 @@ export const translations = {
         "sidebarTitle": "Properties",
         "clipboardTitle": "Clipboard",
         "templatesDesc": "Upload a template file",
+        "uploadFile": "Upload File",
+        "newFile": "New File",
+        "templates": "Templates",
         // Tools
         "measureDistance": "Measure Distance",
         "measureAngle": "Measure Angle",
