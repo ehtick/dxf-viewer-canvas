@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MATERIALS, TEMPERS, DEFAULT_MATERIAL_ID } from './materials.js';
+import { MATERIALS, TEMPERS, DEFAULT_MATERIAL_ID, PRES } from './materials.js';
 
 export class WeightManager {
     constructor(viewer, languageManager, snappingManager, onCloseCallback, onChainSelectCallback) {
@@ -12,6 +12,10 @@ export class WeightManager {
         this.currentMaterialId = DEFAULT_MATERIAL_ID;
         // Default temper
         this.currentTemperId = TEMPERS.length > 0 ? TEMPERS[0].id : '';
+
+        // Default Pres & Figur
+        this.currentPresId = PRES.length > 0 ? PRES[0].id : '';
+        this.currentFigur = 1;
 
         this.selectedObjects = [];
         this.calculationResult = null;
@@ -105,6 +109,36 @@ export class WeightManager {
             // Set default if exists
             this.currentTemperId = temperSelector.value;
         }
+
+        // Populate Pres Selector
+        const presSelector = document.getElementById('pres-selector');
+        if (presSelector) {
+            presSelector.innerHTML = '';
+            PRES.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name; // e.g. "1100 ton 5 inc"
+                if (p.id === this.currentPresId) opt.selected = true;
+                presSelector.appendChild(opt);
+            });
+            // Update current if changed/default
+            if (presSelector.value) this.currentPresId = presSelector.value;
+        }
+
+        // Figur is static in HTML, just set value
+        const figurSelector = document.getElementById('figur-selector');
+        if (figurSelector) {
+            figurSelector.value = this.currentFigur;
+        }
+
+        // Populate Pres and Figur selectors (created dynamically or assumed present in HTML?)
+        // The plan said "Insert ... into Weight Panel" in HTML.
+        // Wait, I forgot to update HTML for Pres/Figur selectors! 
+        // I should inject them into innerHTML of createUI or use replace_file_content on HTML.
+        // But here I'll assume they exist and bind them.
+
+        // NOTE: I will update HTML in next step.
+
     }
 
     bindEvents() {
@@ -135,10 +169,29 @@ export class WeightManager {
             });
         }
 
-        // Add Template button
+        // Bind Pres & Figur (New)
+        const presSelector = document.getElementById('pres-selector');
+        if (presSelector) {
+            presSelector.addEventListener('change', (e) => {
+                this.currentPresId = e.target.value;
+                this.calculateAndRender();
+            });
+        }
+
+        const figurSelector = document.getElementById('figur-selector');
+        if (figurSelector) {
+            figurSelector.addEventListener('change', (e) => {
+                this.currentFigur = parseInt(e.target.value, 10);
+                this.calculateAndRender();
+            });
+        }
+
+        /* Removed Add Template Button Listener as button is removed */
+        /*
         if (this.addTemplateBtn) {
             this.addTemplateBtn.addEventListener('click', () => this.openTemplatePopup());
         }
+        */
 
         // Template popup close/cancel buttons
         const closeBtn = document.getElementById('template-popup-close');
@@ -268,6 +321,11 @@ export class WeightManager {
         this.templatePopup.classList.remove('hidden');
     }
 
+    async openTemplateSelectorForNewTab() {
+        this.openTemplatePopup();
+        this.isOpeningNewTab = true;
+    }
+
     closeTemplatePopup() {
         if (this.templatePopup) {
             this.templatePopup.classList.add('hidden');
@@ -314,8 +372,18 @@ export class WeightManager {
         this.selectedTemplatePath = selectedFile;
         this.closeTemplatePopup();
 
-        // Enter template placement mode
-        this.enterTemplatePlacementMode();
+        if (this.isOpeningNewTab) {
+            this.isOpeningNewTab = false;
+            // Trigger Main App Load
+            if (this.viewer.app) {
+                // Determine if selectedFile is a local or remote path
+                // For 'templates/file.dxf', we treat it as URL relative to root
+                this.viewer.app.loadUrl(selectedFile);
+            }
+        } else {
+            // Enter template placement mode
+            this.enterTemplatePlacementMode();
+        }
     }
 
     // ========================================
@@ -1532,6 +1600,22 @@ export class WeightManager {
         this.updateDOM('val-perimeter', outerPerimeter.toFixed(2));
         this.updateDOM('val-totalperimeter', totalPerimeter.toFixed(2));
         this.updateDOM('val-shapefactor', shapeFactor.toFixed(2));
+
+        // Calculate Extrusion Ratio
+        const pres = PRES.find(p => p.id === this.currentPresId);
+        let ratio = 0;
+        if (pres && netArea > 0 && this.currentFigur > 0) {
+            // Formula: Container Area / (FigurCount * NetArea)
+            if (pres.containerArea) {
+                ratio = pres.containerArea / (this.currentFigur * netArea);
+            }
+        }
+        this.updateDOM('val-extrusion-ratio', ratio.toFixed(2));
+
+        // Update stats
+        this.lastCalculatedStats.extrusionRatio = ratio;
+        this.lastCalculatedStats.presId = this.currentPresId;
+        this.lastCalculatedStats.figur = this.currentFigur;
 
         this.calculationResult = { outer: outer.geomEntry, inner: inner.map(i => i.geomEntry) };
         this.visualize();

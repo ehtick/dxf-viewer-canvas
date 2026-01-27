@@ -11,6 +11,9 @@ import { CmdAddMeasurement, CmdDelete } from './commands.js';
 import { ClipboardManager } from './clipboard-manager.js';
 
 
+import { TabManager } from './tab-manager.js';
+// ... imports
+
 class DXFViewerApp {
     constructor() {
         this.canvas = document.getElementById('viewport');
@@ -22,6 +25,8 @@ class DXFViewerApp {
             currentX: 0,
             currentY: 0
         };
+        // Initialize Tab Manager (will be fully init in this.init())
+        this.tabManager = null;
         this.init();
     }
 
@@ -32,13 +37,18 @@ class DXFViewerApp {
         this.history = new CommandHistory((canUndo, canRedo) => this.updateUndoRedoUI(canUndo, canRedo));
 
         this.viewer = new SceneViewer(this.canvas);
-
         this.viewer.languageManager = this.languageManager;
-        this.viewer.app = this; // Link app to viewer for callbacks (e.g. from MeasurementManager)
+        this.viewer.app = this;
 
         this.loader = new DxfLoader();
+
+        // Tab Manager Initialization
+        this.tabManager = new TabManager(this.viewer, this);
+        // this.tabManager.init(); // Moved to end of init
+
+
         this.dxf = null;
-        this.currentDxfFile = null; // Store the file object for download
+        this.currentDxfFile = null;
         this.selectedObject = null;
         this.draggingCanvas = false;
 
@@ -71,6 +81,9 @@ class DXFViewerApp {
 
         this.clipboardManager = new ClipboardManager(this.viewer, this.weightManager, this.languageManager);
 
+        // Initialize Tab Manager last, as it may trigger clearing selection which relies on other managers
+        this.tabManager.init(); // Creates initial empty tab
+
         this.setupUIEvents();
         this.updateStatus(this.languageManager.translate('ready'));
 
@@ -92,69 +105,75 @@ class DXFViewerApp {
         if (statusBar) statusBar.textContent = msg;
     }
 
+    // ...
     setupUIEvents() {
-        this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
-        this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
-        this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
-        document.addEventListener('keydown', (e) => this.onKeyDown(e));
+        // ... (mouse events)
 
-        this.canvas.addEventListener('dblclick', (e) => {
-            if (this.measurementManager && this.measurementManager.activeTool) return;
+        // Dropdown Logic for Open File
+        const openFileBtn = document.getElementById('open-file-btn');
+        const fileDropdown = document.getElementById('file-dropdown');
+        if (openFileBtn && fileDropdown) {
+            openFileBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                fileDropdown.classList.toggle('hidden');
+            });
 
-            const rect = this.canvas.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-            const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-            const pointer = new THREE.Vector2(x, y);
-
-            const intersects = this.viewer.raycast(pointer);
-            if (intersects.length > 0) {
-                const hit = intersects[0].object;
-
-                if (hit.parent && hit.parent.userData && (hit.parent.userData.type === 'LWPOLYLINE' || hit.parent.userData.type === 'POLYLINE')) {
-                    const group = hit.parent;
-
-                    // Toggle selection (cumulative, like single click)
-                    const idx = this.selectedObjects.indexOf(group);
-                    if (idx > -1) {
-                        this.viewer.highlightObject(group, false);
-                        this.selectedObjects.splice(idx, 1);
-                    } else {
-                        this.viewer.highlightObject(group, true);
-                        this.selectedObjects.push(group);
-                    }
-
-                    this.objectInfoManager.update(this.selectedObjects);
-                    this.weightManager.update(this.selectedObjects);
-                    this.updateStatus(this.selectedObjects.length > 0 ? 'Selected: ' + this.selectedObjects.length + ' items' : 'Ready');
-                    return;
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!openFileBtn.contains(e.target) && !fileDropdown.contains(e.target)) {
+                    fileDropdown.classList.add('hidden');
                 }
+            });
+        }
 
-                const connected = this.findConnectedEntities(hit, this.viewer.dxfGroup.children);
-                connected.forEach(obj => {
-                    this.viewer.highlightObject(obj, true);
-                    if (this.selectedObjects.indexOf(obj) === -1) this.selectedObjects.push(obj);
-                });
+        // New File Action
+        const menuNewFile = document.getElementById('menu-new-file');
+        if (menuNewFile) {
+            menuNewFile.addEventListener('click', () => {
+                this.tabManager.createNewTab("New File");
+                fileDropdown?.classList.add('hidden');
+            });
+        }
 
-                this.viewer.highlightObject(hit, true);
-                if (this.selectedObjects.indexOf(hit) === -1) this.selectedObjects.push(hit);
+        // Templates Action (reusing weight manager logic slightly or directly loading)
+        const menuTemplates = document.getElementById('menu-templates');
+        if (menuTemplates) {
+            menuTemplates.addEventListener('click', () => {
+                // For now, maybe trigger the template popup from WeightManager?
+                // Or we should separate Template selection logic.
+                // The user said "Templates > Templates klasöründeki templateler listelenir".
+                // This implies a submenu or a popup list. 
+                // Since WeightManager has a robust template loader, we might leverage it or request it to open template popup.
+                // But WeightManager's template popup adds to EXISTING scene.
+                // User wants "Open File > Templates" which presumably implies opening AS NEW FILE.
 
-                this.objectInfoManager.update(this.selectedObjects);
-                this.weightManager.update(this.selectedObjects);
-                this.updateStatus('Chain Selected: ' + (connected.length + 1) + ' items');
-            }
-        });
+                // Let's reuse WeightManager's popup but change its behavior context?
+                // Or built a simpler cleaner list here.
+                // Let's ask WeightManager to open its popup, but we intercept the result?
+                // Simpler: Just open the same popup, but handling the selection might need coordination.
+
+                // Accessing weightManager.openTemplatePopup() 
+                // We need to modify WeightManager to handle "Open as New" vs "Add to Scene".
+
+                this.weightManager.openTemplateSelectorForNewTab();
+                fileDropdown?.classList.add('hidden');
+            });
+        }
 
         const fileInput = document.getElementById('file-input');
         if (fileInput) {
             fileInput.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
-                    this.loadDXFFile(e.target.files[0]);
+                    // Load into NEW TAB
+                    this.loadDXFFile(e.target.files[0], true);
+                    fileDropdown?.classList.add('hidden');
                 }
                 // Reset input so same file can be selected again
                 e.target.value = '';
             });
         }
 
+        // ... Drop Zone Logic
         const dropZone = document.body;
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -164,9 +183,13 @@ class DXFViewerApp {
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             if (e.dataTransfer.files.length > 0) {
-                this.loadDXFFile(e.dataTransfer.files[0]);
+                // Drop always opens in new tab? Yes usually expected.
+                this.loadDXFFile(e.dataTransfer.files[0], true);
             }
         });
+
+        // ...
+
 
         const zoomExtentsBtn = document.getElementById('zoom-menu-btn');
         if (zoomExtentsBtn) {
@@ -441,10 +464,7 @@ class DXFViewerApp {
                 this.objectInfoManager.update([]);
                 this.weightManager.update([]);
                 document.getElementById('selection-box')?.classList.add('hidden');
-                this.weightManager.update([]);
-                document.getElementById('selection-box')?.classList.add('hidden');
                 this.updateStatus('Deleted ' + cmd.selection.length + ' items');
-                this.updateWeightButtonState(false);
             }
         );
 
@@ -480,9 +500,7 @@ class DXFViewerApp {
         }
         this.selectedObjects = [];
         this.objectInfoManager.update(this.selectedObjects);
-        this.objectInfoManager.update(this.selectedObjects);
         this.weightManager.update(this.selectedObjects);
-        this.updateWeightButtonState(false);
         this.updateStatus(this.languageManager.translate('selectionCleared'));
     }
 
@@ -981,17 +999,44 @@ class DXFViewerApp {
             if (!response.ok) throw new Error('Network response was not ok');
             const blob = await response.blob();
             const file = new File([blob], url.split('/').pop(), { type: 'application/dxf' });
-            this.loadDXFFile(file);
+
+            // Checks if we should open in new tab (e.g. if current is not empty)
+            // For URL loading (e.g. at startup), we use current active tab if empty.
+            // If startup param, init() calls loadUrl.
+
+            await this.loadDXFFile(file, false); // Let loadDXFFile decide
         } catch (error) {
             console.error(error);
             this.updateStatus('Error loading file');
         }
     }
 
-    async loadDXFFile(file) {
+    async loadDXFFile(file, forceNewTab = false) {
         if (!file) return;
 
         const extension = file.name.split('.').pop().toLowerCase();
+
+        // Handle Tab Logic BEFORE processing
+        // If forceNewTab is true, create new tab immediately
+        // If not forced, check if current tab is "New File" (empty).
+
+        const currentTab = this.tabManager.getActiveTab();
+        const isEmpty = currentTab.dxfGroup.children.length === 0 && currentTab.name === "New File";
+
+        if (forceNewTab || !isEmpty) {
+            // Create new tab and switch to it
+            this.tabManager.createNewTab(file.name);
+        } else {
+            // Reuse current tab
+            this.tabManager.updateTabName(currentTab.id, file.name);
+            // Clear existing if any (though we checked isEmpty)
+            this.tabManager.disposeGroup(currentTab.dxfGroup); // Dispose old content
+            this.viewer.dxfGroup.clear(); // Clear children
+        }
+
+        // Pass file to the active tab state for "Download" reference
+        const activeTab = this.tabManager.getActiveTab();
+        activeTab.file = file;
 
         if (extension === 'dwg') {
             await this.handleDwgConversion(file);
@@ -1033,12 +1078,13 @@ class DXFViewerApp {
             const blob = await response.blob();
 
             // 6. Convert to File object
-            // 6. Convert to File object
             const convertedFile = new File([blob], file.name.replace(/\.dwg$/i, '.dxf'), {
                 type: 'application/dxf'
             });
 
-            this.currentDxfFile = convertedFile; // Store for download
+            // Update tab file reference to the converted one
+            const activeTab = this.tabManager.getActiveTab();
+            activeTab.file = convertedFile;
 
             // 7. Load converted DXF
             await this.processDxfFile(convertedFile);
@@ -1056,31 +1102,26 @@ class DXFViewerApp {
     async processDxfFile(file) {
         this.updateStatus('Parsing DXF...');
         try {
-            // If it's a direct DXF load (not from conversion which sets it earlier), store it.
-            // But processDxfFile is called by loadDXFFile and handleDwgConversion.
-            // handleDwgConversion sets it. loadDXFFile calls processDxfFile directly for .dxf.
-            // So we should set it here if not already set? Or just overwrite?
-            // Actually, safest is to overwrite if the passed file is different?
-            // Simpler: Just set it here.
-            this.currentDxfFile = file;
-            this.updateDownloadButtonState();
+            this.updateDownloadButtonState(); // Updates based on activeTab.file
 
             const dxf = await this.loader.load(file);
             console.log('DXF Data:', dxf);
-            this.dxf = dxf;
+            this.dxf = dxf; // Keep generic reference, though might be per-tab? 
+            // Ideally detailed DXF data should be in tab state if needed later.
 
             this.updateStatus('Generating 3D Scene...');
             if (dxf) {
                 const group = this.loader.generateThreeEntities(dxf);
                 console.log('Generated ' + group.children.length + ' entities from DXF');
+
+                // Add to Viewer (which is linked to Active Tab Group)
                 this.viewer.setEntities(group);
+
                 this.updateStatus('Loaded ' + file.name);
                 this.updateEntityTree(group.children);
                 this.updateLayersPanel(this.viewer.dxfGroup);
 
-                // Show filename in UI
-                const fileNameEl = document.getElementById('file-name');
-                if (fileNameEl) fileNameEl.innerText = file.name;
+                // No need to update #file-name element as we now use Tabs
             }
 
             // Enable Measurement Tools & Action Buttons
@@ -1090,11 +1131,6 @@ class DXFViewerApp {
                 if (btn) {
                     btn.removeAttribute('disabled');
                     btn.classList.remove('opacity-50', 'cursor-not-allowed', 'disabled:opacity-30', 'disabled:opacity-50');
-                    // Removing all potential opacity classes to be safe
-                    // Note: The HTML uses disabled:opacity-30 for print/download and opacity-50 for tools.
-                    // Just removing 'opacity-50' might not be enough if 'disabled:opacity-30' is used with 'disabled' attr.
-                    // But removing 'disabled' attribute stops the disabled: classes from applying.
-                    // Keeping clean class removal for manually added utility classes if any.
                 }
             });
 
@@ -1343,7 +1379,8 @@ class DXFViewerApp {
     updateDownloadButtonState() {
         const btn = document.getElementById('download-btn');
         if (btn) {
-            if (this.currentDxfFile) {
+            const activeTab = this.tabManager ? this.tabManager.getActiveTab() : null;
+            if (activeTab && activeTab.file) {
                 btn.disabled = false;
             } else {
                 btn.disabled = true;
@@ -1352,13 +1389,17 @@ class DXFViewerApp {
     }
 
     downloadDxfFile() {
-        if (!this.currentDxfFile) return;
+        // Use active tab's file
+        const activeTab = this.tabManager ? this.tabManager.getActiveTab() : null;
+        if (!activeTab || !activeTab.file) return;
+
+        // Pass file to executor
+        this.currentDxfFile = activeTab.file; // legacy sync or just pass arg
 
         const modal = document.getElementById('download-modal');
         if (modal) {
             modal.classList.remove('hidden');
         } else {
-            // Fallback if modal missing
             this.executeDownload();
         }
     }

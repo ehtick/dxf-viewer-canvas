@@ -18,4 +18,12 @@ export const TEMPERS = [
     { id: 'T66', name: "T66" }
 ];
 
+export const PRES = [
+    { id: '1100', name: "1100", containerArea: 13478 },
+    { id: '1600', name: "1600", containerArea: 19600 },
+    { id: '2750', name: "2750", containerArea: 34636 },
+    { id: '4000', name: "4000", containerArea: 53500 },
+    { id: '4500', name: "4500", containerArea: 53500 }
+];
+
 export const DEFAULT_MATERIAL_ID = '6063';

@@ -8,6 +8,9 @@ export const translations = {
         // Header / File
         "appTitle": "DXF Görüntüleyici",
         "openFile": "Dosya Aç",
+        "newFile": "Yeni Dosya",
+        "uploadFile": "Dosya Yükle",
+        "templates": "Şablonlar",
         "noFileSelected": "Dosya seçilmedi",
         "loadingDXF": "DXF dosyası yükleniyor...",
         "errorLoading": "DXF yüklenirken hata: ",
@@ -132,6 +135,7 @@ export const translations = {
         "outerPerimeter": "Dış Çevre",
         "shapeFactor": "Şekil Faktörü",
         "totalPerimeter": "Toplam Çevre",
+        "extrusionRatio": "Ekstrüzyon Oranı",
         "addTemplate": "Antet Ekle",
         "selectTemplate": "Antet Seç",
         "templateFile": "Antet Dosyası",

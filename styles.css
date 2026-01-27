@@ -140,7 +140,77 @@ body {
 .file-name {
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    font-style: italic;
+}
+
+/* Tab Bar */
+.tab-bar {
+    display: flex;
+    align-items: center;
+    background: var(--bg-tertiary);
+    height: 36px;
+    padding: 0 8px;
+    gap: 4px;
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    flex-shrink: 0;
+}
+
+.tab-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    height: 28px;
+    background: var(--bg-primary);
+    border-radius: 4px 4px 0 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all var(--transition-fast);
+    min-width: 100px;
+    max-width: 200px;
+}
+
+.tab-item:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.tab-item.active {
+    background: var(--bg-secondary);
+    color: var(--accent-primary);
+    border-bottom: 2px solid var(--accent-primary);
+}
+
+.tab-title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tab-close {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--text-tertiary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+
+.tab-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--error);
+}
+
+/* File Open */
+.file-upload-container {
+    position: relative;
 }
 
 /* Buttons */
@@ -753,11 +823,10 @@ body {
 
 /* File Open Button (Folder) */
 .file-open-btn {
-    width: 48px;
-    height: 48px;
-    padding: 6px;
-    display: flex;
-    align-items: center;
+    width: auto;
+    min-width: 48px;
+    padding: 6px 12px;
+    gap: 8px;
     justify-content: center;
     border-radius: 6px;
     color: var(--accent-primary);
