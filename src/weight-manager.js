@@ -1371,14 +1371,31 @@ export class WeightManager {
         const previewWasVisible = this.previewMesh ? this.previewMesh.visible : false;
         if (this.previewMesh) this.previewMesh.visible = false;
 
+        // Hide OSNAP Markers
+        const markersWasVisible = this.snappingManager && this.snappingManager.markerGroup ? this.snappingManager.markerGroup.visible : true;
+        if (this.snappingManager && this.snappingManager.markerGroup) {
+            this.snappingManager.markerGroup.visible = false;
+        }
+
         // Store original background and colors
         const originalBg = this.viewer.scene.background ? this.viewer.scene.background.clone() : null;
-        const colorBackup = [];
+
+        // Fix: Use Set to track unique materials preventing double-modification/restoration of shared materials
+        const processedMaterials = new Set();
+        const materialBackup = [];
 
         this.viewer.scene.traverse((obj) => {
             if (obj.material && obj.material.color) {
-                colorBackup.push({ obj, color: obj.material.color.getHex() });
-                obj.material.color.setHex(0x000000);
+                // Handle Array of Materials (unlikely for Lines but possible for Meshes)
+                const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+
+                mats.forEach(mat => {
+                    if (!processedMaterials.has(mat)) {
+                        processedMaterials.add(mat);
+                        materialBackup.push({ material: mat, hex: mat.color.getHex() });
+                        mat.color.setHex(0x000000);
+                    }
+                });
             }
         });
 
@@ -1426,12 +1443,20 @@ export class WeightManager {
 
         // Restore background and colors
         this.viewer.scene.background = originalBg;
-        for (const { obj, color } of colorBackup) {
-            obj.material.color.setHex(color);
+
+        // Restore materials
+        materialBackup.forEach(item => {
+            item.material.color.setHex(item.hex);
+        });
+
+        // Restore preview elements
+        if (this.previewMesh) this.previewMesh.visible = previewWasVisible;
+        if (this.snappingManager && this.snappingManager.markerGroup) {
+            this.snappingManager.markerGroup.visible = markersWasVisible;
         }
 
-        // Restore preview mesh
-        if (this.previewMesh) this.previewMesh.visible = previewWasVisible;
+        // Force Scene Resize Sync 
+        if (this.viewer.resize) this.viewer.resize();
 
         // Render restored state
         renderer.render(this.viewer.scene, this.viewer.camera);

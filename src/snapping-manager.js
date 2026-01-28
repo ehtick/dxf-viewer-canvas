@@ -22,6 +22,19 @@ export class SnappingManager {
             node: true
         };
 
+        // Priority for snapping (lower index = higher priority)
+        this.snapPriority = {
+            'endpoint': 1,
+            'midpoint': 2,
+            'intersection': 2,  // High priority for intersections
+            'center': 3,
+            'quadrant': 4,
+            'node': 4,
+            // Perpendicular/Nearest should be fallback if no key point is close
+            'perpendicular': 10,
+            'nearest': 11
+        };
+
         // World plane and temp vectors for cursor positioning
         this.worldPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // z=0
         this._cursorWorld = new THREE.Vector3();
@@ -69,125 +82,143 @@ export class SnappingManager {
 
         // Check each intersected object for snap points
         // Limit to first few intersections for performance
+        // Limit to first few intersections for performance
         const checkCount = Math.min(intersects.length, 5);
+
+        // --- 3. DETECT STICKY CENTERS (Arc/Circle) ---
+        // We check this for all top intersections regardless of whether we snap to them immediately.
+        // This ensures the Center Marker (+) appears when hovering an arc edge, even if we snap to 'nearest' on the edge.
 
         for (let i = 0; i < checkCount; i++) {
             const hit = intersects[i];
             const object = hit.object;
-            const points = this.calculateObjectSnapPoints(object, cursorWorld);
+            const entity = object.userData.entity;
+            if (!entity) continue;
 
-            for (const pt of points) {
-                // Check if type enabled
-                if (!this.enabledSnaps[pt.type]) continue;
+            // Helper to convert to world coords
+            const toWorld = (x, y, z = 0) => {
+                this._tmp.set(x, y, z);
+                return this._tmp.clone().applyMatrix4(object.matrixWorld);
+            };
 
-                // Distance from cursor world pos to snap point
-                const dSq = cursorWorld.distanceToSquared(pt.point);
+            const cursorLocal = cursorWorld ? object.worldToLocal(cursorWorld.clone()) : null;
+            if (!cursorLocal) continue;
 
-                // Check if within screen-space threshold (converted to world)
-                if (dSq < (worldThreshold * worldThreshold)) {
-                    if (dSq < minDistSq) {
-                        minDistSq = dSq;
-                        closestSnap = {
-                            type: pt.type,
-                            point: pt.point,
-                            object: object
-                        };
-                    }
-                }
+            let closestArc = null;
+
+            // Check if it's a circle or arc
+            if ((entity.type === 'CIRCLE' || entity.type === 'ARC') && entity.center) {
+                // Distance check is implicitly done by checking if cursor is on edge?
+                // Actually, 'nearest' snap logic checks distance.
+                // For Sticky Center, we want to know if we are "close enough to the edge".
+                // Since Raycaster hit it, we ARE on the edge (within threshold).
+                // So valid hit = show center.
+                closestArc = { center: entity.center };
             }
-        }
-
-        // Fallback: If no snap found but mouse is on a circle/arc/polyline-arc, snap to center
-        if (!closestSnap && intersects.length > 0 && this.enabledSnaps.center) {
-            for (let i = 0; i < checkCount; i++) {
-                const hit = intersects[i];
-                const object = hit.object;
-                const entity = object.userData.entity;
-
-                // Helper to convert to world coords
-                const toWorld = (x, y, z = 0) => {
-                    this._tmp.set(x, y, z);
-                    return this._tmp.clone().applyMatrix4(object.matrixWorld);
-                };
-
-                // Check if it's a circle or arc
-                if (entity && (entity.type === 'CIRCLE' || entity.type === 'ARC') && entity.center) {
-                    closestSnap = {
-                        type: 'center',
-                        point: toWorld(entity.center.x, entity.center.y, entity.center.z || 0),
-                        object: object
-                    };
-                    break;
-                }
-
-                // Check if it's a polyline with bulge arcs
-                if (entity && (entity.type === 'LWPOLYLINE' || entity.type === 'POLYLINE') && entity.vertices) {
-                    // Find the arc segment closest to the cursor
-                    let closestArc = null;
-                    let minDist = Infinity;
-
-                    const cursorLocal = cursorWorld ? object.worldToLocal(cursorWorld.clone()) : null;
-
-                    for (let j = 0; j < entity.vertices.length - 1; j++) {
-                        const v1 = entity.vertices[j];
-                        const v2 = entity.vertices[j + 1];
-
-                        if (v1.bulge && cursorLocal) {
-                            const arc = this.calculateBulgeArcData(v1, v2, v1.bulge);
-                            if (arc) {
-                                // Distance from cursor to arc center
-                                const dx = cursorLocal.x - arc.center.x;
-                                const dy = cursorLocal.y - arc.center.y;
-                                const dist = Math.sqrt(dx * dx + dy * dy);
-
-                                // Check if cursor is roughly at the arc's radius (on the arc)
-                                const radiusDiff = Math.abs(dist - arc.radius);
-
-                                if (radiusDiff < minDist) {
-                                    minDist = radiusDiff;
-                                    closestArc = arc;
-                                }
+            // Check LWPOLYLINE bulge arcs
+            else if ((entity.type === 'LWPOLYLINE' || entity.type === 'POLYLINE') && entity.vertices) {
+                for (let j = 0; j < entity.vertices.length - 1; j++) {
+                    const v1 = entity.vertices[j];
+                    const v2 = entity.vertices[j + 1];
+                    if (v1.bulge) {
+                        const arc = this.calculateBulgeArcData(v1, v2, v1.bulge);
+                        if (arc) {
+                            // Check if this specific arc segment was the one hit?
+                            // Raycaster hits the object (Polyline). It doesn't tell us WHICH segment.
+                            // We must check distance to this arc's edge.
+                            const dx = cursorLocal.x - arc.center.x;
+                            const dy = cursorLocal.y - arc.center.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (Math.abs(dist - arc.radius) < (this.snapDistance / worldPerPixel)) { // Approximation
+                                closestArc = arc;
+                                break;
                             }
                         }
                     }
+                }
+            }
 
-                    if (closestArc) {
-                        closestSnap = {
-                            type: 'center',
-                            point: toWorld(closestArc.center.x, closestArc.center.y, 0),
-                            object: object
-                        };
-                        break;
+            if (closestArc) {
+                const centerSnap = {
+                    type: 'center',
+                    point: toWorld(closestArc.center.x, closestArc.center.y, 0),
+                    object: object
+                };
+
+                // Add to sticky list if not exists
+                const exists = this.stickySnaps.some(s => s.object.id === object.id); // One center per object? Or per arc?
+                // For polylines, might have multiple arcs. Stick to one for now per object or refine ID.
+                // Simplicity: Per object.
+                if (!exists) {
+                    this.stickySnaps.push(centerSnap);
+                }
+            }
+        }
+
+        // --- 4. COLLECT SNAP CANDIDATES ---
+        if (intersects.length > 0) {
+            let allSnaps = [];
+
+            for (let i = 0; i < checkCount; i++) {
+                const hit = intersects[i];
+                const object = hit.object;
+
+                const points = this.calculateObjectSnapPoints(object, cursorWorld);
+
+                for (const pt of points) {
+                    if (!this.enabledSnaps[pt.type]) continue;
+
+                    const dSq = cursorWorld.distanceToSquared(pt.point);
+                    if (dSq < (worldThreshold * worldThreshold)) {
+                        allSnaps.push({
+                            type: pt.type,
+                            point: pt.point,
+                            object: object,
+                            distanceSq: dSq,
+                            priority: this.snapPriority[pt.type] || 99,
+                            hitIndex: i // Capture visual order (0 is top-most)
+                        });
                     }
                 }
             }
-        }
 
-        if (closestSnap) {
-            // Sticky Logic: If it's a center snap, add to sticky list
-            if (closestSnap.type === 'center') {
-                // Deduplicate based on Object ID
-                const exists = this.stickySnaps.some(s => s.object.id === closestSnap.object.id);
-                if (!exists) {
-                    this.stickySnaps.push(closestSnap);
+            // Sort: 
+            // 1. Priority (Lower is better: Endpoint < Nearest)
+            // 2. Hit Index (Lower is better: Top Object < Bottom Object) -> Visual Tie-Breaker
+            // 3. Distance (Lower is better)
+            allSnaps.sort((a, b) => {
+                if (a.priority !== b.priority) {
+                    return a.priority - b.priority;
                 }
+                if (a.hitIndex !== b.hitIndex) {
+                    return a.hitIndex - b.hitIndex;
+                }
+                return a.distanceSq - b.distanceSq;
+            });
+
+            if (allSnaps.length > 0) {
+                closestSnap = allSnaps[0];
             }
         }
 
-        // Draw Markers for ALL Sticky Snaps
+        // --- 5. FINALIZE ---
+
+        // Draw Markers for Stickies
         this.stickySnaps.forEach(snap => {
-            this.drawSnapMarker(snap, true); // true = isSticky (Plus sign)
+            this.drawSnapMarker(snap, true);
         });
 
         // Determine functionality and draw primary snap
         if (closestSnap) {
             this.activeSnap = closestSnap;
-            // Draw closest snap (Active = Circle/Square/etc)
-            // Even if it duplicates position of sticky, we want the Active visual on top.
             this.drawSnapMarker(closestSnap, false);
         } else if (this.stickySnaps.length > 0) {
-            // No new snap found -> Fallback to closest sticky
+            // No direct snap (e.g. not hovering edge anymore)?
+            // OR hovering edge but only sticky remains?
+            // "Nearest" makes closestSnap almost always exist on edge.
+            // If we move AWAY from edge but stay near Center Marker?
 
+            // Allow snapping to Sticky Centers if cursor is close to them!
             let bestSticky = null;
             let bestDistSq = Infinity;
 
@@ -201,8 +232,6 @@ export class SnappingManager {
 
             if (bestSticky && bestDistSq < (worldThreshold * worldThreshold)) {
                 this.activeSnap = bestSticky;
-                // If we are actively snapping to a sticky one, draw it as ACTIVE (Circle)
-                // to show it's "Hot".
                 this.drawSnapMarker(bestSticky, false);
             }
         }
@@ -222,13 +251,19 @@ export class SnappingManager {
         };
 
         // Convert cursor to local space for nearest point calculations
+        // Note: For 'nearest', we want the projection of 'cursorWorld' onto the geometry.
+        // Since we are adding 'nearest' to the list, we do the math in World Space usually, 
+        // to avoid matrix multiply overhead if possible, OR convert to local.
+        // Let's use Local for easier math (Line segment 0..1 etc) then convert back.
         const cursorLocal = cursorWorld ? object.worldToLocal(cursorWorld.clone()) : null;
+        if (cursorWorld && !cursorLocal) return snaps; // Should not happen if cursorWorld provided
 
         // Extract geometry based on type
         switch (entity.type) {
             case 'LINE':
                 // Standardize: Look for startPoint/endPoint first (dxf-json)
                 if (entity.startPoint && entity.endPoint) {
+                    // Static Points
                     snaps.push({ type: 'endpoint', point: toWorld(entity.startPoint.x, entity.startPoint.y, entity.startPoint.z ?? 0) });
                     snaps.push({ type: 'endpoint', point: toWorld(entity.endPoint.x, entity.endPoint.y, entity.endPoint.z ?? 0) });
                     snaps.push({
@@ -239,6 +274,19 @@ export class SnappingManager {
                             ((entity.startPoint.z ?? 0) + (entity.endPoint.z ?? 0)) / 2
                         )
                     });
+
+                    // Dynamic: Nearest / Perpendicular
+                    if (cursorLocal) {
+                        const p1 = entity.startPoint;
+                        const p2 = entity.endPoint;
+                        const nearestLocal = this.closestPointOnSegment(cursorLocal, p1, p2);
+                        if (nearestLocal) {
+                            snaps.push({ type: 'nearest', point: toWorld(nearestLocal.x, nearestLocal.y, nearestLocal.z || 0) });
+                            // Perpendicular snap logic is reserved for future implementation (requires base point context).
+                            // For now, 'nearest' efficiently handles snapping to any point on the segment.
+                        }
+                    }
+
                 } else if (entity.vertices) {
                     // Fallback for older parser or Polyline segments treated as Lines
                     snaps.push({ type: 'endpoint', point: toWorld(entity.vertices[0].x, entity.vertices[0].y, 0) });
@@ -251,7 +299,15 @@ export class SnappingManager {
                             0
                         )
                     });
+                    if (cursorLocal) {
+                        const nearestLocal = this.closestPointOnSegment(cursorLocal, entity.vertices[0], entity.vertices[1]);
+                        if (nearestLocal) {
+                            snaps.push({ type: 'nearest', point: toWorld(nearestLocal.x, nearestLocal.y, 0) });
+                        }
+                    }
                 }
+                break;
+
                 break;
 
             case 'LWPOLYLINE':
@@ -311,6 +367,14 @@ export class SnappingManager {
                                     const qy = arc.center.y + arc.radius * Math.sin(qa);
                                     snaps.push({ type: 'quadrant', point: toWorld(qx, qy, 0) });
                                 }
+
+                                // Nearest on Arc
+                                if (cursorLocal) {
+                                    const nearestOnArc = this.closestPointOnArc(cursorLocal, arc.center, arc.radius, arc.startAngle, arc.endAngle, arc.ccw);
+                                    if (nearestOnArc) {
+                                        snaps.push({ type: 'nearest', point: toWorld(nearestOnArc.x, nearestOnArc.y, 0) });
+                                    }
+                                }
                             }
                         } else {
                             // No bulge - straight segment: chord midpoint
@@ -318,6 +382,13 @@ export class SnappingManager {
                                 type: 'midpoint',
                                 point: toWorld((v1.x + v2.x) / 2, (v1.y + v2.y) / 2, 0)
                             });
+                            // Nearest On Segment
+                            if (cursorLocal) {
+                                const nearestLocal = this.closestPointOnSegment(cursorLocal, v1, v2);
+                                if (nearestLocal) {
+                                    snaps.push({ type: 'nearest', point: toWorld(nearestLocal.x, nearestLocal.y, 0) });
+                                }
+                            }
                         }
                     }
                 }
@@ -375,6 +446,29 @@ export class SnappingManager {
                     const endX = entity.center.x + entity.radius * Math.cos(endRad);
                     const endY = entity.center.y + entity.radius * Math.sin(endRad);
                     snaps.push({ type: 'endpoint', point: toWorld(endX, endY, entity.center.z || 0) });
+
+                    // Nearest on Arc
+                    if (cursorLocal) {
+                        // For DXF Arc, angles are Degrees. Helper converts to Rads if needed or we use entity values?
+                        const startR = (entity.startAngle * Math.PI) / 180;
+                        const endR = (entity.endAngle * Math.PI) / 180;
+                        // Determine CCW? DXF is usually CCW.
+                        // However, start and end angles might be ordered.
+                        // Assuming CCW from start to end.
+
+                        const nearestOnArc = this.closestPointOnArc(cursorLocal, entity.center, entity.radius, startR, endR, true);
+                        if (nearestOnArc) {
+                            snaps.push({ type: 'nearest', point: toWorld(nearestOnArc.x, nearestOnArc.y, entity.center.z || 0) });
+                        }
+                    }
+                } else if (entity.type === 'CIRCLE') {
+                    // Nearest on Circle
+                    if (cursorLocal) {
+                        const nearestOnCircle = this.closestPointOnArc(cursorLocal, entity.center, entity.radius, 0, Math.PI * 2, true, true); // true for full circle
+                        if (nearestOnCircle) {
+                            snaps.push({ type: 'nearest', point: toWorld(nearestOnCircle.x, nearestOnCircle.y, entity.center.z || 0) });
+                        }
+                    }
                 }
                 break;
         }
@@ -459,6 +553,54 @@ export class SnappingManager {
             pts.push(new THREE.Vector3(-size / 2, 0, 0));
             pts.push(new THREE.Vector3(0, size / 2, 0));
             geometry = new THREE.BufferGeometry().setFromPoints(pts);
+            pts.push(new THREE.Vector3(-size / 2, -size / 2, 0));
+            geometry = new THREE.BufferGeometry().setFromPoints(pts);
+        } else if (snap.type === 'nearest') {
+            // Hourglass
+            const pts = [];
+            pts.push(new THREE.Vector3(-size / 2, size / 2, 0));
+            pts.push(new THREE.Vector3(size / 2, -size / 2, 0));
+            pts.push(new THREE.Vector3(-size / 2, -size / 2, 0)); // Bottom line? No hourglass is X with top/bottom bars usually
+            // AutoCAD Nearest is like an Hourglass.
+            // Top Line
+            pts.push(new THREE.Vector3(-size / 2, size / 2, 0));
+            pts.push(new THREE.Vector3(size / 2, size / 2, 0));
+            // Diagonal
+            pts.push(new THREE.Vector3(-size / 2, -size / 2, 0));
+            // Bottom Line
+            pts.push(new THREE.Vector3(size / 2, -size / 2, 0));
+            pts.push(new THREE.Vector3(size / 2, size / 2, 0)); // Diagonal back
+
+            // Simple Hourglass:
+            // (-w, h) -> (w, h) -> (-w, -h) -> (w, -h) -> (-w, h)
+            const pts2 = [
+                new THREE.Vector3(-size / 2, size / 2, 0),
+                new THREE.Vector3(size / 2, size / 2, 0),
+                new THREE.Vector3(-size / 2, -size / 2, 0),
+                new THREE.Vector3(size / 2, -size / 2, 0),
+                new THREE.Vector3(-size / 2, size / 2, 0)
+            ];
+            geometry = new THREE.BufferGeometry().setFromPoints(pts2);
+        } else if (snap.type === 'perpendicular') {
+            // Right Angle (Bottom Left corner usually)
+            //  |
+            //  |___
+            const pts = [];
+            pts.push(new THREE.Vector3(-size / 2, size / 2, 0));
+            pts.push(new THREE.Vector3(-size / 2, -size / 2, 0));
+            pts.push(new THREE.Vector3(size / 2, -size / 2, 0));
+            // Inner right angle
+            pts.push(new THREE.Vector3(0, -size / 2, 0));
+            pts.push(new THREE.Vector3(0, 0, 0));
+            pts.push(new THREE.Vector3(-size / 2, 0, 0));
+
+            // Simplest: L shape
+            const pts2 = [
+                new THREE.Vector3(-size / 2, size / 2, 0),
+                new THREE.Vector3(-size / 2, -size / 2, 0),
+                new THREE.Vector3(size / 2, -size / 2, 0)
+            ];
+            geometry = new THREE.BufferGeometry().setFromPoints(pts2);
         } else {
             // Default: Intersection -> X
             const pts = [];
@@ -473,10 +615,6 @@ export class SnappingManager {
         const marker = new THREE.Line(geometry, this.markerMaterial);
         marker.position.copy(snap.point);
         marker.renderOrder = 999;
-
-        // Visual distinction: stickies slightly transparent?
-        // But markerMaterial is shared.
-        // User requested Shape difference, which we did (+ vs O).
 
         this.markerGroup.add(marker);
     }
@@ -588,5 +726,69 @@ export class SnappingManager {
             ccw,
             sweep
         };
+    }
+
+    closestPointOnSegment(p, a, b) {
+        const pax = p.x - a.x, pay = p.y - a.y;
+        const bax = b.x - a.x, bay = b.y - a.y;
+        const h = Math.min(1.0, Math.max(0.0, (pax * bax + pay * bay) / (bax * bax + bay * bay)));
+        return {
+            x: a.x + h * bax,
+            y: a.y + h * bay
+        };
+    }
+
+    closestPointOnArc(p, center, radius, startAngle, endAngle, ccw = true, fullCircle = false) {
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+
+        // Angle from center to point
+        let angle = Math.atan2(dy, dx);
+        const TAU = Math.PI * 2;
+
+        // Project to circle radius
+        const px = center.x + radius * Math.cos(angle);
+        const py = center.y + radius * Math.sin(angle);
+
+        if (fullCircle) {
+            return { x: px, y: py };
+        }
+
+        // Normalize
+        const norm = (a) => (a % TAU + TAU) % TAU;
+        angle = norm(angle);
+        const s = norm(startAngle);
+        const e = norm(endAngle);
+
+        // Check if angle is within arc
+        let inside = false;
+
+        if (ccw) { // ccw: s -> e
+            if (s <= e) {
+                inside = (angle >= s && angle <= e);
+            } else { // Wrap around 0
+                inside = (angle >= s || angle <= e);
+            }
+        } else { // cw: s -> e (decreasing?)
+            // entity data for Bulge usually handled by converting to CCW start/end
+            // But if we passed raw angles, we must be careful.
+            // My calculateBulgeArcData returns CCW sweeps.
+            // If entity is ARC/CIRCLE, we assume CCW.
+            if (s <= e) {
+                inside = (angle >= s && angle <= e);
+            } else {
+                inside = (angle >= s || angle <= e);
+            }
+        }
+
+        if (inside) {
+            return { x: px, y: py };
+        }
+
+        // If not inside, clamp to nearest endpoint?
+        // Usually, 'nearest' snap SHOULD NOT snap to endpoints if far away.
+        // It strictly snaps "On Object". If outside arc span, it is NOT on object.
+        // So return null.
+        return null;
     }
 }
