@@ -9,7 +9,7 @@ export class SnappingManager {
         this.raycaster = new THREE.Raycaster();
 
         // Configuration
-        this.snapDistance = 15; // in pixels
+        this.snapDistance = 6; // in pixels
         this.activeSnap = null; // { type, point, object }
         this.enabledSnaps = {
             endpoint: true,
@@ -183,15 +183,15 @@ export class SnappingManager {
             }
 
             // Sort: 
-            // 1. Priority (Lower is better: Endpoint < Nearest)
-            // 2. Hit Index (Lower is better: Top Object < Bottom Object) -> Visual Tie-Breaker
+            // 1. Hit Index (Lower is better: Top Object < Bottom Object) -> Matches Visual Highlight ("Green Object")
+            // 2. Priority (Lower is better: Endpoint < Nearest)
             // 3. Distance (Lower is better)
             allSnaps.sort((a, b) => {
-                if (a.priority !== b.priority) {
-                    return a.priority - b.priority;
-                }
                 if (a.hitIndex !== b.hitIndex) {
                     return a.hitIndex - b.hitIndex;
+                }
+                if (a.priority !== b.priority) {
+                    return a.priority - b.priority;
                 }
                 return a.distanceSq - b.distanceSq;
             });

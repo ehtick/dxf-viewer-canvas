@@ -219,7 +219,7 @@ export class SceneViewer {
         this.raycaster.setFromCamera(pointer, this.camera);
         // Raycast against lines. Precision threshold in world units
         // Screen space threshold approx 10px
-        const worldThreshold = 10 * this.getWorldPerPixel();
+        const worldThreshold = 6 * this.getWorldPerPixel();
         this.raycaster.params.Line.threshold = worldThreshold;
 
         // Recursive = true to hit children of Groups (like Blocks or the main Loader group)
