@@ -281,11 +281,21 @@ export class DxfLoader {
     // PRİMİTİFLER
     // ------------------------------------------------------------
     createLine(entity, material) {
-        if (!entity.startPoint || !entity.endPoint) return null;
+        let p1, p2;
+
+        if (entity.vertices && entity.vertices.length >= 2) {
+            p1 = entity.vertices[0];
+            p2 = entity.vertices[1];
+        } else if (entity.startPoint && entity.endPoint) {
+            p1 = entity.startPoint;
+            p2 = entity.endPoint;
+        } else {
+            return null;
+        }
 
         const points = [
-            new THREE.Vector3(entity.startPoint.x, entity.startPoint.y, entity.startPoint.z || 0),
-            new THREE.Vector3(entity.endPoint.x, entity.endPoint.y, entity.endPoint.z || 0)
+            new THREE.Vector3(p1.x, p1.y, p1.z || 0),
+            new THREE.Vector3(p2.x, p2.y, p2.z || 0)
         ];
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         return new THREE.Line(geometry, material);
