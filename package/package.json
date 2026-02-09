@@ -1,0 +1,79 @@
+{
+  "name": "dxf-json",
+  "version": "0.11.0",
+  "description": "perfect dxf parser",
+  "type": "module",
+  "main": "./dist/cjs/bundle.cjs",
+  "module": "./dist/esm/bundle.mjs",
+  "types": "./dist/cjs/types/index.d.ts",
+  "exports": {
+    "import": {
+      "types": "./dist/esm/types/index.d.ts",
+      "default": "./dist/esm/bundle.mjs"
+    },
+    "require": {
+      "types": "./dist/cjs/types/index.d.ts",
+      "default": "./dist/cjs/bundle.cjs"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf ./dist && tsc --project tsconfig.esm.json && tsc --project tsconfig.cjs.json && rollup --config",
+    "test": "vitest run --config ./vite.config.ts && npm run typetest",
+    "test-dev": "vitest --config ./vite.config.ts --silent=false",
+    "analyze": "depcruise src --include-only \".*(types|index|consts).ts\" -T dot | dot -Grankdir=TD -Gsplines=ortho -T svg > dependency-graph.svg",
+    "new": "vite-node scripts/create-snippet.ts",
+    "typetest": "npm --workspace=integration-test run build",
+    "print": "vite-node ./scripts/print.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dotoritos-kim/dxf-json.git"
+  },
+  "keywords": [
+    "dxf",
+    "cad",
+    "dxf-json",
+    "json",
+    "type-safe-dxf",
+    "type-safe",
+    "typescript"
+  ],
+  "author": {
+    "name": "kanghyune kim",
+    "email": "wwponv158@gmail.com"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "contributors": [
+    "phryxia"
+  ],
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/dotoritos-kim/dxf-json/issues",
+    "email": "wwponv158@gmail.com"
+  },
+  "homepage": "https://github.com/dotoritos-kim/dxf-json#readme",
+  "dependencies": {
+    "@fxts/core": "^1.0.1"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.13.5",
+    "@types/readable-stream": "^4.0.10",
+    "@types/three": "^0.180.0",
+    "dependency-cruiser": "^17.0.0",
+    "prettier": "^3.7.4",
+    "rollup": "^4.52.5",
+    "rollup-plugin-swc3": "^0.12.1",
+    "typescript": "^5.9.3",
+    "vite-node": "^3.2.4",
+    "vitest": "^4.0.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "workspaces": [
+    ".",
+    "integration-test"
+  ]
+}

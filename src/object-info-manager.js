@@ -17,7 +17,7 @@ export class ObjectInfoManager {
         } else if (objects.length === 1) {
             this.renderSingleObject(objects[0], context);
         } else {
-            this.renderMultipleObjects(objects);
+            this.renderMultiObject(objects);
         }
     }
 
