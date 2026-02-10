@@ -1,6 +1,7 @@
 export const MATERIALS = [
     { id: '6060', name: "6060", density: 2.7 },
     { id: '6063', name: "6063", density: 2.7 },
+    { id: '6005', name: "6005", density: 2.7 },
     { id: '6082', name: "6082", density: 2.7 },
     { id: '6061', name: "6061", density: 2.7 },
     { id: '6013', name: "6013", density: 2.7 },
