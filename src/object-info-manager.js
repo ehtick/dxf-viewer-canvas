@@ -1,5 +1,6 @@
 
 import * as THREE from 'three';
+import { STANDARTS, calculateTolerance, calculateOpenEndTolerance } from './tolerances.js';
 
 export class ObjectInfoManager {
     constructor(viewer, measurementManager, app) {
@@ -436,14 +437,30 @@ export class ObjectInfoManager {
             '</div>';
     }
 
+    // Updated HTML generation for Tolerance Section
     getToleranceHTML(tolerance) {
+        // active state
         const active = tolerance ? tolerance.active : false;
-        // User said: "Tolerans aktif değilse tolerans yoktur ve inputlar '0' dır."
-        // We show 0 if not active, or kept value? "inputlar 0 dır" implies we show 0.
-        const plus = (tolerance && active) ? tolerance.plus : 0;
-        const minus = (tolerance && active) ? tolerance.minus : 0;
+        const plus = (tolerance && active) ? (tolerance.plus !== undefined ? tolerance.plus : 0) : 0;
+        const minus = (tolerance && active) ? (tolerance.minus !== undefined ? tolerance.minus : 0) : 0;
+
+        // standard (e.g. '755-9') or 'custom'
+        const currentStandard = (tolerance && tolerance.standard) ? tolerance.standard : 'custom';
+        const isCustom = currentStandard === 'custom';
+
         const disabled = active ? '' : 'disabled';
         const opacity = active ? 'opacity-100' : 'opacity-50 pointer-events-none';
+
+        // If standard is selected, hide inputs? Or just disable them?
+        // Plan says: "If a standard tolerance ... is selected, the manual input should be hidden"
+        const inputDisplay = isCustom ? 'block' : 'none';
+        const calcDisplay = isCustom ? 'none' : 'block';
+
+        // Build Select Options
+        let options = `<option value="custom" ${currentStandard === 'custom' ? 'selected' : ''}>Özel Tolerans</option>`;
+        STANDARTS.forEach(std => {
+            options += `<option value="${std.id}" ${currentStandard === std.id ? 'selected' : ''}>${std.name}</option>`;
+        });
 
         return `
         <div class="tolerance-section mt-3 pt-2 border-t border-white/10">
@@ -451,14 +468,34 @@ export class ObjectInfoManager {
                  <span class="text-gray-200 font-medium text-sm">Tolerans</span>
                  <input type="checkbox" id="tol-active" ${active ? 'checked' : ''} class="form-checkbox h-4 w-4 text-cyan-400 rounded bg-black/20 border-white/10 cursor-pointer accent-cyan-500">
             </div>
-            <div id="tol-inputs" class="grid grid-cols-2 gap-2 transition-opacity duration-200 ${opacity}">
-                <div class="relative">
-                     <span class="absolute left-2 top-1.5 text-xs text-gray-500 font-bold">+</span>
-                     <input type="number" id="tol-plus" value="${plus}" step="0.01" class="w-full bg-black/20 border border-white/10 rounded pl-5 pr-2 py-1 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" placeholder="0.00" ${disabled}>
+            
+            <div id="tol-container" class="transition-opacity duration-200 ${opacity}">
+                <!-- Standard Selection -->
+                <div class="mb-2">
+                    <select id="tol-standard" class="w-full bg-black/20 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500" ${disabled}>
+                        ${options}
+                    </select>
                 </div>
-                <div class="relative">
-                     <span class="absolute left-2 top-1.5 text-xs text-gray-500 font-bold">-</span>
-                     <input type="number" id="tol-minus" value="${minus}" step="0.01" class="w-full bg-black/20 border border-white/10 rounded pl-5 pr-2 py-1 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" placeholder="0.00" ${disabled}>
+
+                <!-- Manual Inputs (Custom) -->
+                <div id="tol-inputs" class="grid grid-cols-2 gap-2" style="display: ${inputDisplay};">
+                    <div class="relative">
+                         <span class="absolute left-2 top-1.5 text-xs text-gray-500 font-bold">+</span>
+                         <input type="number" id="tol-plus" value="${plus}" step="0.01" class="w-full bg-black/20 border border-white/10 rounded pl-5 pr-2 py-1 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" placeholder="0.00" ${disabled}>
+                    </div>
+                    <div class="relative">
+                         <span class="absolute left-2 top-1.5 text-xs text-gray-500 font-bold">-</span>
+                         <input type="number" id="tol-minus" value="${minus}" step="0.01" class="w-full bg-black/20 border border-white/10 rounded pl-5 pr-2 py-1 text-sm text-white focus:outline-none focus:border-cyan-500 font-mono" placeholder="0.00" ${disabled}>
+                    </div>
+                </div>
+
+                <!-- Calculated Value Display (Standard) -->
+                <div id="tol-calculated" class="text-center p-2 bg-white/5 rounded border border-white/10" style="display: ${calcDisplay};">
+                    <div class="text-xs text-gray-400 mb-1">Hesaplanan Değer</div>
+                    <div class="font-mono text-cyan-400 font-bold">
+                        +${active ? plus.toFixed(2) : '0.00'} / -${active ? minus.toFixed(2) : '0.00'}
+                    </div>
+                    <button id="tol-recalc" class="mt-2 w-full text-xs bg-cyan-600 hover:bg-cyan-500 text-white py-1 rounded">Tekrar Seç</button>
                 </div>
             </div>
         </div>`;
@@ -466,62 +503,293 @@ export class ObjectInfoManager {
 
     bindToleranceEvents(object) {
         const cb = document.getElementById('tol-active');
+        const selStandard = document.getElementById('tol-standard');
         const iPlus = document.getElementById('tol-plus');
         const iMinus = document.getElementById('tol-minus');
+        const divContainer = document.getElementById('tol-container');
         const divInputs = document.getElementById('tol-inputs');
+        const divCalculated = document.getElementById('tol-calculated');
+        const btnRecalc = document.getElementById('tol-recalc');
 
-        if (!cb || !iPlus || !iMinus) return;
+        if (!cb || !selStandard) return;
 
+        // Helper to update tolerance object
         const updateObj = () => {
             const tol = {
                 active: cb.checked,
-                plus: parseFloat(iPlus.value) || 0,
-                minus: parseFloat(iMinus.value) || 0
+                standard: selStandard.value, // 'custom' or standard ID
+                plus: parseFloat(iPlus ? iPlus.value : 0) || 0,
+                minus: parseFloat(iMinus ? iMinus.value : 0) || 0
             };
             if (this.measurementManager) {
                 this.measurementManager.updateTolerance(object, tol);
             }
         };
 
+        // Checkbox Handler
         cb.addEventListener('change', () => {
             const isActive = cb.checked;
             if (isActive) {
-                divInputs.classList.remove('opacity-50', 'pointer-events-none');
-                divInputs.classList.add('opacity-100');
-                iPlus.disabled = false;
-                iMinus.disabled = false;
-                // Keep default 0 or restore? Request says "inputlar 0 dır" when not active. 
-                // So when activating, they start at 0 (already 0).
+                divContainer.classList.remove('opacity-50', 'pointer-events-none');
+                divContainer.classList.add('opacity-100');
+                if (selStandard) selStandard.disabled = false;
+                if (iPlus) iPlus.disabled = false;
+                if (iMinus) iMinus.disabled = false;
             } else {
-                divInputs.classList.add('opacity-50', 'pointer-events-none');
-                divInputs.classList.remove('opacity-100');
-                iPlus.disabled = true;
-                iMinus.disabled = true;
-                iPlus.value = 0;
-                iMinus.value = 0;
+                divContainer.classList.add('opacity-50', 'pointer-events-none');
+                divContainer.classList.remove('opacity-100');
+                if (selStandard) selStandard.disabled = true;
+                if (iPlus) iPlus.disabled = true;
+                if (iMinus) iMinus.disabled = true;
+                // Reset values only if custom?
+                if (iPlus) iPlus.value = 0;
+                if (iMinus) iMinus.value = 0;
             }
             updateObj();
         });
 
-        iPlus.addEventListener('input', () => {
-            // " + tolerans inputu değiştiğinde, - tolerans inputu onunla aynı olacak şekilde otomatik güncellenir."
-            // Only update minus if it hasn't been manually edited? 
-            // Or always? "dinamik olarak otomatik güncellenir".
-            // Usually this implies a "symmetric" convenience, but allows override?
-            // "Eş zamanlı olarak ölçümün toleransı güncellenir."
-            // If user types in Plus, update Minus to match.
-            // If user THEN types in Minus, it changes Minus (asymmetric).
-            // But if user goes back to Plus, does it overwrite Minus? 
-            // "onunla aynı olacak şekilde" implies strict linking OR convenience default.
-            // Let's implement strict following when Plus changes.
-            iMinus.value = iPlus.value;
+        // Select Change Handler
+        selStandard.addEventListener('change', () => {
+            const val = selStandard.value;
+            if (val === 'custom') {
+                if (divInputs) divInputs.style.display = 'grid'; // grid defined in HTML
+                if (divCalculated) divCalculated.style.display = 'none';
+                // Re-enable manual editing
+                if (iPlus) iPlus.disabled = false;
+                if (iMinus) iMinus.disabled = false;
+            } else {
+                // Standard Mode
+                if (divInputs) divInputs.style.display = 'none';
+                if (divCalculated) divCalculated.style.display = 'block';
+                // Disable manual editing (inputs hidden anyway)
+                if (iPlus) iPlus.disabled = true;
+                if (iMinus) iMinus.disabled = true;
 
+                // Show Modal for Selection
+                this.showToleranceModal(val, object, (plus, minus) => {
+                    // Callback when calc done
+                    if (iPlus) iPlus.value = plus;
+                    if (iMinus) iMinus.value = minus;
+                    updateObj();
+                    // Update display
+                    if (divCalculated) {
+                        const txt = divCalculated.querySelector('.font-mono');
+                        if (txt) txt.textContent = `+${plus.toFixed(2)} / -${minus.toFixed(2)}`;
+                    }
+                });
+            }
             updateObj();
         });
 
-        iMinus.addEventListener('input', () => {
-            updateObj();
+        // Manual Input Handlers
+        if (iPlus) {
+            iPlus.addEventListener('input', () => {
+                // Sync Minus if Custom? Only initially requested behavior.
+                if (iMinus) iMinus.value = iPlus.value;
+                updateObj();
+            });
+        }
+        if (iMinus) {
+            iMinus.addEventListener('input', () => {
+                updateObj();
+            });
+        }
+
+        // Recalc Button Handler
+        if (btnRecalc) {
+            btnRecalc.addEventListener('click', () => {
+                const val = selStandard.value;
+                if (val !== 'custom') {
+                    this.showToleranceModal(val, object, (plus, minus) => {
+                        if (iPlus) iPlus.value = plus;
+                        if (iMinus) iMinus.value = minus;
+                        updateObj();
+                        if (divCalculated) {
+                            const txt = divCalculated.querySelector('.font-mono');
+                            if (txt) txt.textContent = `+${plus.toFixed(2)} / -${minus.toFixed(2)}`;
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    createToleranceModal() {
+        if (document.getElementById('tolerance-modal')) return;
+
+        // Create overlay
+        const modal = document.createElement('div');
+        modal.id = 'tolerance-modal';
+        // Tailwind classes for centered fixed overlay
+        modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-[2000] hidden backdrop-blur-sm'; // Very high z-index
+
+        // Modal Content
+        modal.innerHTML = `
+            <div class="bg-gray-900 border border-white/20 p-6 rounded-xl shadow-2xl max-w-4xl w-full relative flex flex-col max-h-[90vh]">
+                <button id="tol-modal-close" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors text-xl">✕</button>
+                
+                <h3 class="text-xl text-white font-bold mb-6 flex items-center gap-2">
+                    <span class="w-1 h-6 bg-cyan-500 rounded-full inline-block"></span>
+                    Tolerans Seçimi (EN 755-9)
+                </h3>
+                
+                <div class="flex flex-col md:flex-row gap-6 overflow-hidden">
+                    <!-- Image Area -->
+                    <div class="flex-1 flex items-center justify-center bg-black/40 rounded-lg p-4 border border-white/5">
+                        <img src="src/755-9.JPG" alt="Profile Logic" class="max-h-[50vh] object-contain shadow-lg rounded">
+                    </div>
+                    
+                    <!-- Controls Area -->
+                    <div class="w-full md:w-64 flex flex-col gap-3 justify-center shrink-0">
+                        <div class="text-sm text-gray-400 mb-2 font-mono border-b border-white/10 pb-2">
+                            <div>Mat: <span id="tol-debug-mat" class="text-white">-</span></div>
+                            <div>Prf: <span id="tol-debug-prf" class="text-white">-</span></div>
+                            <div>Dim: <span id="tol-debug-dim" class="text-white">-</span></div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <button class="tol-btn w-full bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded font-bold transition-all shadow hover:shadow-cyan-500/20" data-class="A">A</button>
+                            <button class="tol-btn w-full bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded font-bold transition-all shadow hover:shadow-cyan-500/20" data-class="B">B</button>
+                            <button class="tol-btn w-full bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded font-bold transition-all shadow hover:shadow-cyan-500/20" data-class="C">C</button>
+                            <div class="h-px bg-white/10 my-2"></div>
+                            <button class="tol-btn w-full bg-purple-600 hover:bg-purple-500 text-white py-3 rounded font-bold transition-all shadow hover:shadow-purple-500/20" data-class="H">H</button>
+                            <button class="tol-btn w-full bg-purple-600 hover:bg-purple-500 text-white py-3 rounded font-bold transition-all shadow hover:shadow-purple-500/20" data-class="H_OPEN">H (Açık Uç)</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // Bind Close Event
+        document.getElementById('tol-modal-close').addEventListener('click', () => {
+            this.hideToleranceModal();
         });
+
+        // Bind Button Events (Delegation or direct)
+        // We will bind click handlers dynamically in showToleranceModal or strictly here.
+        // It is cleaner to bind logic here if we store the 'currentCallback' somewhere.
+        const btns = modal.querySelectorAll('.tol-btn');
+        btns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const cls = btn.dataset.class;
+                this.handleToleranceSelection(cls);
+            });
+        });
+    }
+
+    hideToleranceModal() {
+        const modal = document.getElementById('tolerance-modal');
+        if (modal) modal.classList.add('hidden');
+        // If we cancelled, do we revert `selStandard`? The logic needs to know if a value was selected.
+        if (this._tolCallback) {
+            // Cancelled?
+            // this._tolCallback(0, 0); // Or keep last?
+            this._tolCallback = null;
+        }
+    }
+
+    showToleranceModal(standardId, object, callback) {
+        this.createToleranceModal();
+        const modal = document.getElementById('tolerance-modal');
+        if (!modal) return;
+
+        // Context Data
+        this._tolCallback = callback;
+        this._tolCurrentObject = object;
+        this._tolStandardId = standardId;
+
+        // Get Measurement Value
+        let dimension = 0;
+        // Logic to extract value from object
+        if (object.userData.type === 'DIMENSION' || (object.parent && object.parent.userData.type === 'DIMENSION')) {
+            // value is usually stored in userData.value (e.g. 50.123)
+            // Check measurement-manager code: `dimension.userData.value = dist.toFixed(2);` It's a string?
+            const dimObj = object.userData.type === 'DIMENSION' ? object : object.parent;
+            dimension = parseFloat(dimObj.userData.value);
+        } else if (object.userData.type === 'LINE') {
+            dimension = this.calculateLength(object);
+        }
+        this._tolDimension = dimension;
+
+        // Get Material and Profile Type from WeightManager
+        let materialName = 'Unknown';
+        let materialId = '6063'; // Default fallback
+        let profileType = 'solid'; // Default
+
+        if (this.app && this.app.weightManager) {
+            const wm = this.app.weightManager;
+            materialId = wm.currentMaterialId;
+            // Find name
+            // Assuming MATERIALS import isn't here, rely on what we can get or pass
+            // We can just use ID. The calculateTolerance logic uses 'alloyId' which matches 'materialId' usually (e.g. '6063').
+            // Let's verify `src/materials.js`. Assuming `MATERIALS` has `id: '6063'`.
+
+            // Profile Type logic
+            if (wm.lastCalculatedStats) {
+                const mandrel = wm.lastCalculatedStats.mandrelCount;
+                profileType = (mandrel > 0) ? 'hollow' : 'solid';
+            }
+        }
+        this._tolMaterialId = materialId;
+        this._tolProfileType = profileType;
+
+        // Update Debug Info in Modal
+        const elMat = document.getElementById('tol-debug-mat');
+        const elPrf = document.getElementById('tol-debug-prf');
+        const elDim = document.getElementById('tol-debug-dim');
+        if (elMat) elMat.textContent = materialId;
+        if (elPrf) elPrf.textContent = profileType.toUpperCase();
+        if (elDim) elDim.textContent = dimension.toFixed(2);
+
+        // Show
+        modal.classList.remove('hidden');
+    }
+
+    handleToleranceSelection(cls) {
+        console.log(`[ObjectInfo] Selected Tolerance Class: ${cls}`);
+
+        // Check callback
+        if (!this._tolCallback) return;
+
+        // 1. Calculate
+        const std = this._tolStandardId;
+        const alloy = this._tolMaterialId;
+        const type = this._tolProfileType;
+        const dim = this._tolDimension;
+
+        let result = 0;
+
+        if (cls === 'H_OPEN') {
+            // Special case: Prompt for E
+            // For now simple prompt, can be improved to UI later
+            const input = prompt("Lütfen 'E (Açık Uç Uzunluğu)' değerini girin:", "0");
+            if (input === null) return; // Cancelled
+            const eVal = parseFloat(input);
+
+            // Base H
+            const base = calculateTolerance(std, alloy, type, dim, 'H');
+            if (base !== null) {
+                result = calculateOpenEndTolerance(base, eVal);
+            } else {
+                alert("H toleransı hesaplanamadı.");
+                return;
+            }
+        } else {
+            result = calculateTolerance(std, alloy, type, dim, cls);
+        }
+
+        if (result !== null) {
+            // Apply symmetric? Table gives +/- absolute value usually?
+            // "The tolerances ... are +/- values" -> Yes.
+            const plus = result;
+            const minus = result;
+
+            this._tolCallback(plus, minus);
+            this.hideToleranceModal();
+        } else {
+            alert("Tolerans aralığı bulunamadı veya veri eksik.");
+        }
     }
 
     async handleExtractFace(object) {
