@@ -2004,34 +2004,15 @@ export class WeightManager {
             }
         }
 
-        // Use bounding box for minimum enclosing circle approximation
-        let minX = Infinity, maxX = -Infinity;
-        let minY = Infinity, maxY = -Infinity;
+        // Use Welzl's algorithm (minimumEnclosingCircle) instead of BBox
+        console.log(`[calculateBoundingCircle] Using Welzls algorithm for ${points.length} points`);
 
-        for (const p of points) {
-            minX = Math.min(minX, p.x);
-            maxX = Math.max(maxX, p.x);
-            minY = Math.min(minY, p.y);
-            maxY = Math.max(maxY, p.y);
-        }
-
-        console.log(`[calculateBoundingCircle] Sampled ${points.length} points, bbox: (${minX.toFixed(1)},${minY.toFixed(1)}) to (${maxX.toFixed(1)},${maxY.toFixed(1)})`);
-
-        // Circle center is bounding box center
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
-
-        // Radius is the maximum distance from center to any sampled point
-        let radius = 0;
-        for (const p of points) {
-            const dist = Math.hypot(p.x - centerX, p.y - centerY);
-            radius = Math.max(radius, dist);
-        }
+        const mec = this.minimumEnclosingCircle(points);
 
         return {
-            diameter: radius * 2,
-            center: { x: centerX, y: centerY },
-            radius: radius
+            diameter: mec.diameter,
+            center: mec.center,
+            radius: mec.radius
         };
     }
 

@@ -716,29 +716,72 @@ export class ObjectInfoManager {
         let materialName = 'Unknown';
         let materialId = '6063'; // Default fallback
         let profileType = 'solid'; // Default
+        let cdValue = 100; // Default fallback
 
         if (this.app && this.app.weightManager) {
             const wm = this.app.weightManager;
             materialId = wm.currentMaterialId;
-            // Find name
-            // Assuming MATERIALS import isn't here, rely on what we can get or pass
-            // We can just use ID. The calculateTolerance logic uses 'alloyId' which matches 'materialId' usually (e.g. '6063').
-            // Let's verify `src/materials.js`. Assuming `MATERIALS` has `id: '6063'`.
 
             // Profile Type logic
             if (wm.lastCalculatedStats) {
                 const mandrel = wm.lastCalculatedStats.mandrelCount;
                 profileType = (mandrel > 0) ? 'hollow' : 'solid';
             }
+
+            // Calculate CD (DU) directly for this object
+            // Create a temporary geometric entry structure that WeightManager expects
+            let geomEntry = null;
+            if (object.userData.type === 'LWPOLYLINE' || object.userData.type === 'POLYLINE') {
+                geomEntry = { type: 'single', objects: [object] };
+            } else if (object.userData.type === 'CIRCLE') {
+                // For circle, CD is just Diameter
+                // But let's use common logic if possible
+                geomEntry = { type: 'single', objects: [object] };
+            } else if (object.userData.type === 'LINE') {
+                // Lines don't have CD in the same way, but let's try
+                geomEntry = { type: 'single', objects: [object] };
+            }
+
+            if (geomEntry) {
+                try {
+                    const circleData = wm.calculateBoundingCircleDiameter(geomEntry);
+                    if (circleData && circleData.diameter) {
+                        cdValue = circleData.diameter;
+                        console.log(`[ObjectInfo] Calculated CD for selected object: ${cdValue}`);
+                    }
+                } catch (e) {
+                    console.error("[ObjectInfo] Error calculating CD:", e);
+                }
+            } else {
+                // Fallback to last calculated if exists
+                if (wm.lastCalculatedStats && wm.lastCalculatedStats.diameter) {
+                    cdValue = wm.lastCalculatedStats.diameter;
+                }
+            }
         }
         this._tolMaterialId = materialId;
         this._tolProfileType = profileType;
+        this._tolCD = cdValue;
+
+        // Determine Alloy Group for Debug
+        let alloyGroup = '?';
+        const std = STANDARTS.find(s => s.id === standardId);
+        if (std) {
+            for (const grp of std.groups) {
+                if (grp.alloys.includes(materialId)) {
+                    alloyGroup = grp.id;
+                    break;
+                }
+            }
+        }
+
+        console.log(`[ObjectInfo] showToleranceModal - Material: ${materialId}, AlloyGroup: ${alloyGroup}, CD: ${cdValue}`);
 
         // Update Debug Info in Modal
         const elMat = document.getElementById('tol-debug-mat');
         const elPrf = document.getElementById('tol-debug-prf');
         const elDim = document.getElementById('tol-debug-dim');
-        if (elMat) elMat.textContent = materialId;
+        if (elMat) elMat.textContent = `${materialId} [${alloyGroup}] (CD: ${cdValue.toFixed(1)})`;
         if (elPrf) elPrf.textContent = profileType.toUpperCase();
         if (elDim) elDim.textContent = dimension.toFixed(2);
 
@@ -757,6 +800,7 @@ export class ObjectInfoManager {
         const alloy = this._tolMaterialId;
         const type = this._tolProfileType;
         const dim = this._tolDimension;
+        const cd = this._tolCD;
 
         let result = 0;
 
@@ -768,7 +812,7 @@ export class ObjectInfoManager {
             const eVal = parseFloat(input);
 
             // Base H
-            const base = calculateTolerance(std, alloy, type, dim, 'H');
+            const base = calculateTolerance(std, alloy, type, dim, 'H', cd);
             if (base !== null) {
                 result = calculateOpenEndTolerance(base, eVal);
             } else {
@@ -776,7 +820,7 @@ export class ObjectInfoManager {
                 return;
             }
         } else {
-            result = calculateTolerance(std, alloy, type, dim, cls);
+            result = calculateTolerance(std, alloy, type, dim, cls, cd);
         }
 
         if (result !== null) {

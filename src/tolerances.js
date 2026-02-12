@@ -45,16 +45,16 @@ export const TOLERANCES = {
             "Dimensions_H": {
                 "CD_Keys": ["le100", "100_200", "200_300", "300_500", "500_800"],
                 "Data": [
-                    { "min": 0, "max": 10, "tolerances": { "le100": 0.35, "100_200": 0.40, "200_300": 0.45, "300_500": 0.55, "500_800": 0.65 } },
-                    { "min": 10, "max": 25, "tolerances": { "le100": 0.40, "100_200": 0.55, "200_300": 0.65, "300_500": 0.75, "500_800": 0.90 } },
-                    { "min": 25, "max": 50, "tolerances": { "le100": 0.70, "100_200": 0.85, "200_300": 1.00, "300_500": 1.20, "500_800": 1.40 } },
-                    { "min": 50, "max": 100, "tolerances": { "le100": 1.00, "100_200": 1.20, "200_300": 1.45, "300_500": 1.70, "500_800": 2.00 } },
-                    { "min": 100, "max": 150, "tolerances": { "le100": null, "100_200": 1.50, "200_300": 1.80, "300_500": 2.10, "500_800": 2.40 } },
-                    { "min": 150, "max": 200, "tolerances": { "le100": null, "100_200": 1.80, "200_300": 2.10, "300_500": 2.40, "500_800": 2.70 } },
-                    { "min": 200, "max": 300, "tolerances": { "le100": null, "100_200": null, "200_300": 2.40, "300_500": 2.80, "500_800": 3.20 } },
-                    { "min": 300, "max": 450, "tolerances": { "le100": null, "100_200": null, "200_300": null, "300_500": 3.80, "500_800": 4.20 } },
-                    { "min": 450, "max": 600, "tolerances": { "le100": null, "100_200": null, "200_300": null, "300_500": 5.00, "500_800": 5.60 } },
-                    { "min": 600, "max": 800, "tolerances": { "le100": null, "100_200": null, "200_300": null, "300_500": null, "500_800": 6.50 } }
+                    { "min": 0, "max": 10, "tolerances": { "le100": 0.40, "100_200": 0.50, "200_300": 0.55, "300_500": 0.60, "500_800": 0.70 } },
+                    { "min": 10, "max": 25, "tolerances": { "le100": 0.50, "100_200": 0.70, "200_300": 0.80, "300_500": 0.90, "500_800": 1.10 } },
+                    { "min": 25, "max": 50, "tolerances": { "le100": 0.80, "100_200": 0.90, "200_300": 1.00, "300_500": 1.20, "500_800": 1.30 } },
+                    { "min": 50, "max": 100, "tolerances": { "le100": 1.00, "100_200": 1.20, "200_300": 1.30, "300_500": 1.60, "500_800": 1.80 } },
+                    { "min": 100, "max": 150, "tolerances": { "le100": null, "100_200": 1.50, "200_300": 1.70, "300_500": 1.80, "500_800": 2.00 } },
+                    { "min": 150, "max": 200, "tolerances": { "le100": null, "100_200": 1.90, "200_300": 2.20, "300_500": 2.40, "500_800": 2.70 } },
+                    { "min": 200, "max": 300, "tolerances": { "le100": null, "100_200": null, "200_300": 2.50, "300_500": 2.80, "500_800": 3.10 } },
+                    { "min": 300, "max": 450, "tolerances": { "le100": null, "100_200": null, "200_300": null, "300_500": 3.50, "500_800": 3.80 } },
+                    { "min": 450, "max": 600, "tolerances": { "le100": null, "100_200": null, "200_300": null, "300_500": 4.50, "500_800": 5.00 } },
+                    { "min": 600, "max": 800, "tolerances": { "le100": null, "100_200": null, "200_300": null, "300_500": null, "500_800": 6.00 } }
                 ]
             },
             "Wall_Thickness_A_B_C": {
@@ -140,6 +140,7 @@ export function calculateTolerance(standardId, alloyId, profileType, dimension, 
             break;
         }
     }
+    console.log(`[Tolerances] calculateTolerance - Standard: ${standardId}, Alloy: ${alloyId} -> Group: ${groupId}`);
 
     const groupData = TOLERANCES.Alloy_Groups[groupId];
     if (!groupData) return null;
@@ -179,6 +180,8 @@ export function calculateTolerance(standardId, alloyId, profileType, dimension, 
 
     // 4. Get Column Key from CD
     const cdKey = getCDKey(cdValue, tableType);
+    console.log(`[Tolerances] calculateTolerance - CD: ${cdValue} -> Key: ${cdKey}`);
+
     if (!cdKey) return null;
 
     // 5. Retrieve Value
