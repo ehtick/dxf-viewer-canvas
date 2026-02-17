@@ -471,15 +471,68 @@ NOT: Açı toleransları mm (sentil) cinsinden verilmiştir.`;
         this.viewer.zoomExtents();
     }
 
+    calculateStatsForObjects(objects) {
+        if (!objects || objects.length === 0) return null;
+
+        const closedGeoms = this.filterClosedGeometries(objects);
+        if (closedGeoms.length === 0) return null;
+
+        const items = closedGeoms.map(geomEntry => {
+            const area = this.calculateArea(geomEntry);
+            const perimeter = this.calculatePerimeter(geomEntry);
+            return {
+                geomEntry: geomEntry,
+                area: area,
+                perimeter: perimeter
+            };
+        });
+
+        items.sort((a, b) => b.area - a.area);
+
+        const outer = items[0];
+        const inner = items.slice(1);
+
+        const outerArea = outer.area;
+        const innerAreaSum = inner.reduce((sum, item) => sum + item.area, 0);
+        const netArea = outerArea - innerAreaSum;
+        const outerPerimeter = outer.perimeter;
+        const totalPerimeter = items.reduce((sum, item) => sum + item.perimeter, 0);
+
+        const material = MATERIALS.find(m => m.id === this.currentMaterialId) || MATERIALS[0];
+        const weight = (netArea * material.density) / 1000;
+        const perimeterCm = totalPerimeter / 10;
+        const shapeFactor = weight > 0 ? perimeterCm / weight : 0;
+
+        const circleData = this.calculateBoundingCircleDiameter(outer.geomEntry);
+
+        return {
+            netArea,
+            outerPerimeter,
+            totalPerimeter,
+            weight,
+            shapeFactor,
+            mandrelCount: Math.max(0, closedGeoms.length - 1),
+            diameter: circleData ? circleData.diameter : 0,
+            numericScale: 1.0,
+            extrusionRatio: 0,
+            presId: this.currentPresId,
+            figur: this.currentFigur
+        };
+    }
+
     // Generic Placement Logic (Used for Template Content AND Clipboard Paste)
     startPlacement(objectsToPlace, cachedStats = null) {
-        this.templateMode = true; // Use same mode flag for events
+        this.templateMode = true;
         this.scrollSteps = 0;
         this.templateScale = 1.0;
         this.templateRotation = 0;
         this._hasLoggedPosition = false;
 
-        // Store cached stats for table generation
+        if (!cachedStats) {
+            console.log('[WeightManager] No cached stats, calculating on-the-fly...');
+            cachedStats = this.calculateStatsForObjects(objectsToPlace);
+        }
+
         this.pendingPlacementStats = cachedStats;
 
         this.floatingGroup = new THREE.Group();
@@ -833,105 +886,62 @@ NOT: Açı toleransları mm (sentil) cinsinden verilmiştir.`;
             // Use attach to preserve world transform (pos, rot, scale) while reparenting
             this.viewer.dxfGroup.attach(child);
 
-            // Ensure geometry has bounding box for Raycaster
-            if (child.geometry) {
+            // Handle Groups (e.g. Polylines) and Single Objects (Lines/Arcs)
+            const matrix = child.matrix.clone();
+
+            if (child.isGroup) {
+                // Apply to all children (segments of polyline)
+                child.traverse((subChild) => {
+                    // Check if it's a Line or Mesh and has Geometry
+                    if ((subChild.isMesh || subChild.isLine) && subChild.geometry) {
+                        subChild.geometry.applyMatrix4(matrix);
+                        subChild.geometry.computeBoundingBox();
+                    }
+                });
+
+                // Update Entity Data for Polyline
+                if (child.userData.entity && (child.userData.entity.type === 'LWPOLYLINE' || child.userData.entity.type === 'POLYLINE')) {
+                    const newEntity = JSON.parse(JSON.stringify(child.userData.entity));
+                    if (newEntity.vertices) {
+                        newEntity.vertices.forEach(v => {
+                            const vec = new THREE.Vector3(v.x, v.y, v.z || 0);
+                            vec.applyMatrix4(matrix);
+                            v.x = vec.x;
+                            v.y = vec.y;
+                            // Keep Z 0 for 2D logic usually, or preserve if 3D
+                        });
+                        child.userData.entity = newEntity;
+                    }
+                }
+
+            } else if (child.geometry) {
+                // Single Object logic
+                child.geometry.applyMatrix4(matrix);
                 child.geometry.computeBoundingBox();
+
+                // Update Entity Data for Lines
+                if (child.userData.entity && child.userData.entity.type === 'LINE') {
+                    const newEntity = JSON.parse(JSON.stringify(child.userData.entity));
+                    const pos = child.geometry.attributes.position;
+                    if (pos && pos.count >= 2) {
+                        newEntity.startPoint = { x: pos.getX(0), y: pos.getY(0), z: pos.getZ(0) };
+                        newEntity.endPoint = { x: pos.getX(1), y: pos.getY(1), z: pos.getZ(1) };
+                        child.userData.entity = newEntity;
+                    }
+                }
+                // Initial basic support for Circle/Arc updates if needed (omitted for safety unless crucial)
             }
 
-            // Mark as placed geometry
+            // Reset Transform
+            child.position.set(0, 0, 0);
+            child.rotation.set(0, 0, 0);
+            child.scale.set(1, 1, 1);
+            child.updateMatrix();
+
+            // Mark as placed
             child.userData.isPlacedGeometry = true;
             child.userData.placementScale = scale;
-            child.userData.placementRotation = this.templateRotation; // Store rotation for record
-
-            // Verify entity metadata exists for SnappingManager
-            // AND Update Entity Coordinates to Match World Transform
-            // The object geometry is already in correct place relative to parent.
-            // But userData.entity still has original coordinates.
-            // We must update userData.entity to match the new visual placement.
-
-            // Note: child.matrix is local transform relative to NEW parent (dxfGroup).
-            // Since we used attach, child.position/rotation/scale are set correctly relative to dxfGroup.
-            // If we want userData.entity (which represents absolute world coords usually, or local to dxfGroup?)
-            // to match, we need to apply child.matrix to the original entity points.
-
-            // However, userData.entity from Clipboard is based on ORIGINAL coordinates.
-            // child.matrix handles the shift from FloatingGroup (centered) to DxfGroup.
-            // Wait: 
-            // 1. Original Entity: (1000, 1000)
-            // 2. Clipboard Object: created at (1000, 1000)
-            // 3. Floating Group: added object.
-            // 4. Floating Center calculated. Object shifted by -Center.
-            // 5. Floating Group moved to mouse.
-            // 6. Merge: Object attached to DxfGroup.
-            //    Three.js updates child.matrix to preserve World Position.
-            //    So child.position is now correct in DxfGroup space.
-
-            // PROBLEM: userData.entity.startPoint is still (1000, 1000).
-            // But visual line is at Mouse (e.g. 50, 50).
-            // WeightManager calculations use userData.entity if available.
-            // So we must update userData.entity points to match child.position (if Line) or transform them.
-
-            if (child.userData.entity && (child.userData.entity.type === 'LINE' || child.userData.entity.type === 'LWPOLYLINE')) {
-                // Deep clone entity to avoid reference issues
-                const newEntity = JSON.parse(JSON.stringify(child.userData.entity));
-
-                // We need to determine the transformation logic.
-                // The geometry vertices are ALREADY correct because 'attach' modifies the object transform, NOT the geometry vertices?
-                // Wait, 'attach' modifies object.position/rotation/scale. Geometry is unchanged.
-                // So Geometry is still at (1000, 1000) relative to Object Origin.
-                // Object Origin is at (X, Y) relative to Parent.
-
-                // ACTUALLY:
-                // When we 'attach', the Object Matrix is updated.
-                // The VISUAL state is correct.
-                // Bat WeightManager/InfoManager often look at `entity.startPoint`.
-                // If we want `entity.startPoint` to match the VISUAL start point in World Space (or Parent Space?):
-                // We should probably rely on Geometry Vertices + Object Matrix for robust calc.
-                // BUT most existing code might rely on `entity` structure (e.g. for simple parsing).
-
-                // If we want to "bake" the transform into the entity data:
-                // We can't easily bake it into Geometry unless we applyMatrix to geometry.
-                // If we applyMatrix to geometry, we reset Position/Rotation/Scale to identity.
-
-                // Let's try applying the transform to the geometry and resetting the object transform.
-                // This makes "userData.entity" updates easier too.
-
-                child.updateMatrix();
-                child.geometry.applyMatrix4(child.matrix);
-                child.position.set(0, 0, 0);
-                child.rotation.set(0, 0, 0);
-                child.scale.set(1, 1, 1);
-                child.updateMatrix();
-
-                // Now update entity data from the new geometry
-                if (newEntity.type === 'LINE') {
-                    const pos = child.geometry.attributes.position;
-                    newEntity.startPoint = { x: pos.getX(0), y: pos.getY(0), z: pos.getZ(0) };
-                    newEntity.endPoint = { x: pos.getX(1), y: pos.getY(1), z: pos.getZ(1) };
-                }
-                // Polyline is harder (points array), but similar logic.
-
-                child.userData.entity = newEntity;
-            } else if (child.isLine && !child.userData.entity) {
-                // Recover entity from geometry (which we just verified/baked?)
-                // If we baked above, we should do it here too logic-wise.
-                // Simple fallback:
-                if (child.geometry && child.geometry.attributes.position) {
-                    child.updateMatrix();
-                    child.geometry.applyMatrix4(child.matrix);
-                    child.position.set(0, 0, 0);
-                    child.rotation.set(0, 0, 0);
-                    child.scale.set(1, 1, 1);
-                    child.updateMatrix();
-
-                    const pos = child.geometry.attributes.position;
-                    child.userData.entity = {
-                        type: 'LINE',
-                        startPoint: { x: pos.getX(0), y: pos.getY(0), z: pos.getZ(0) },
-                        endPoint: { x: pos.getX(1), y: pos.getY(1), z: pos.getZ(1) }
-                    };
-                }
-            }
+            child.userData.placementRotation = this.templateRotation;
 
             addedObjects.push(child);
         }
@@ -1006,13 +1016,40 @@ NOT: Açı toleransları mm (sentil) cinsinden verilmiştir.`;
         let hasGeometry = false;
 
         this.floatingGroup.children.forEach(c => {
-            if (c.geometry && !c.userData.isInfoTable) {
+            if (c.userData.isInfoTable) return;
+
+            if (c.geometry) {
+                // Single Object
                 if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
                 const geomBox = c.geometry.boundingBox.clone();
                 c.updateMatrix();
                 geomBox.applyMatrix4(c.matrix);
                 localBox.union(geomBox);
                 hasGeometry = true;
+            } else if (c.isGroup) {
+                // Group (e.g. Polyline)
+                const groupBox = new THREE.Box3();
+                let groupHasGeom = false;
+
+                c.traverse(child => {
+                    if ((child.isMesh || child.isLine) && child.geometry) {
+                        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+                        const childBox = child.geometry.boundingBox.clone();
+                        child.updateMatrix();
+                        // child.matrix is relative to Group. Box -> Group Space.
+                        childBox.applyMatrix4(child.matrix);
+                        groupBox.union(childBox);
+                        groupHasGeom = true;
+                    }
+                });
+
+                if (groupHasGeom) {
+                    // Group -> FloatingGroup Space
+                    c.updateMatrix();
+                    groupBox.applyMatrix4(c.matrix);
+                    localBox.union(groupBox);
+                    hasGeometry = true;
+                }
             }
         });
 

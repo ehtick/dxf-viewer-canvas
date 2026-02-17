@@ -1,6 +1,6 @@
 
 import * as THREE from 'three';
-import { STANDARTS, calculateTolerance, calculateOpenEndTolerance } from './tolerances.js';
+import { STANDARTS, calculateTolerance, calculateOpenEndTolerance, calculateAngleTolerance } from './tolerances.js';
 
 export class ObjectInfoManager {
     constructor(viewer, measurementManager, app) {
@@ -476,6 +476,18 @@ export class ObjectInfoManager {
                         ${options}
                     </select>
                 </div>
+                
+                <!-- Tolerance Type Selection (Secondary) -->
+                <div id="tol-type-container" class="mb-2" style="display: none;">
+                    <select id="tol-type" class="w-full bg-black/20 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500">
+                        <option value="" selected disabled>Tolerans Tipi Seçiniz...</option>
+                        <option value="DIMENSION">ÖLÇÜ</option>
+                        <option value="ANGLE">AÇI</option>
+                        <option value="STRAIGHTNESS">DOĞRUSALLIK</option>
+                        <option value="CONTOUR">KONTÜR</option>
+                        <option value="CORNER_RADIUS">KÖŞE RADYUSU</option>
+                    </select>
+                </div>
 
                 <!-- Manual Inputs (Custom) -->
                 <div id="tol-inputs" class="grid grid-cols-2 gap-2" style="display: ${inputDisplay};">
@@ -504,6 +516,8 @@ export class ObjectInfoManager {
     bindToleranceEvents(object) {
         const cb = document.getElementById('tol-active');
         const selStandard = document.getElementById('tol-standard');
+        const selType = document.getElementById('tol-type');
+        const divTypeContainer = document.getElementById('tol-type-container');
         const iPlus = document.getElementById('tol-plus');
         const iMinus = document.getElementById('tol-minus');
         const divContainer = document.getElementById('tol-container');
@@ -554,6 +568,8 @@ export class ObjectInfoManager {
             if (val === 'custom') {
                 if (divInputs) divInputs.style.display = 'grid'; // grid defined in HTML
                 if (divCalculated) divCalculated.style.display = 'none';
+                if (divTypeContainer) divTypeContainer.style.display = 'none';
+
                 // Re-enable manual editing
                 if (iPlus) iPlus.disabled = false;
                 if (iMinus) iMinus.disabled = false;
@@ -561,25 +577,87 @@ export class ObjectInfoManager {
                 // Standard Mode
                 if (divInputs) divInputs.style.display = 'none';
                 if (divCalculated) divCalculated.style.display = 'block';
+                if (divTypeContainer) {
+                    divTypeContainer.style.display = 'block';
+                    // Reset Type Selection
+                    if (selType) selType.value = "";
+                }
+
+                // Default to DIMENSION if just switched?
+                // Or keep last selected?
+                // Let's trigger handleTypeSelection logic
+                handleTypeSelection();
+            }
+            updateObj();
+        });
+
+        const updateCalculated = (plus, minus) => {
+            if (iPlus) iPlus.value = plus;
+            if (iMinus) iMinus.value = minus;
+            updateObj();
+            // Update display
+            if (divCalculated) {
+                const txt = divCalculated.querySelector('.font-mono');
+                if (txt) txt.textContent = `+${plus.toFixed(2)} / -${minus.toFixed(2)}`;
+            }
+        };
+
+        const handleTypeSelection = () => {
+            const std = selStandard.value;
+            const type = selType ? selType.value : '';
+
+            if (!type) return; // Wait for selection
+
+            if (type === 'DIMENSION') {
                 // Disable manual editing (inputs hidden anyway)
                 if (iPlus) iPlus.disabled = true;
                 if (iMinus) iMinus.disabled = true;
 
                 // Show Modal for Selection
-                this.showToleranceModal(val, object, (plus, minus) => {
+                this.showToleranceModal(std, object, (plus, minus) => {
                     // Callback when calc done
-                    if (iPlus) iPlus.value = plus;
-                    if (iMinus) iMinus.value = minus;
-                    updateObj();
-                    // Update display
-                    if (divCalculated) {
-                        const txt = divCalculated.querySelector('.font-mono');
-                        if (txt) txt.textContent = `+${plus.toFixed(2)} / -${minus.toFixed(2)}`;
-                    }
+                    updateCalculated(plus, minus);
                 });
+            } else if (type === 'ANGLE') {
+                // Check if object is Angle?
+                // Ideally check `object.userData.type === 'ANGLE'`
+                // But functionality allows applying angle tolerance to Linear too? (Maybe not sense)
+                // Let's prompt for W
+
+                // Get Angle Value
+                let angleVal = 90;
+                if (object.userData.type === 'ANGLE') {
+                    angleVal = parseFloat(object.userData.value);
+                }
+
+                const promptW = prompt("Lütfen kısa kenar (W) uzunluğunu girin (mm):", "0");
+                if (promptW === null) return;
+                const w = parseFloat(promptW);
+
+                // Determine if 90 degrees
+                // Tolerance for 90? e.g. 89.9-90.1?
+                // Let's assume exactly 90 or close enough if drawn with ortho?
+                // Actually user intent matters.
+                // Let's assume close to 90 (+- 0.1) is Squareness
+                const is90 = Math.abs(angleVal - 90) < 0.1 || Math.abs(angleVal - 270) < 0.1;
+
+                const tol = calculateAngleTolerance(w, is90);
+
+                if (tol !== null) {
+                    updateCalculated(tol, tol); // Symmetric usually?
+                } else {
+                    alert("Açı toleransı hesaplanamadı (Kapsam dışı).");
+                }
+            } else {
+                alert("Bu tolerans tipi henüz aktif değil.");
             }
-            updateObj();
-        });
+        };
+
+        if (selType) {
+            selType.addEventListener('change', () => {
+                handleTypeSelection();
+            });
+        }
 
         // Manual Input Handlers
         if (iPlus) {
@@ -643,6 +721,10 @@ export class ObjectInfoManager {
                     <div class="w-full md:w-64 flex flex-col gap-3 justify-center shrink-0">
                         <div class="text-sm text-gray-400 mb-2 font-mono border-b border-white/10 pb-2">
                             <div>Mat: <span id="tol-debug-mat" class="text-white">-</span></div>
+                            <div class="flex items-center gap-2 mt-1 mb-1">
+                                <span>CD:</span>
+                                <input type="number" id="tol-debug-cd" class="w-20 bg-black/40 border border-white/20 rounded px-1 text-white focus:border-cyan-500 outline-none" step="0.1">
+                            </div>
                             <div>Prf: <span id="tol-debug-prf" class="text-white">-</span></div>
                             <div>Dim: <span id="tol-debug-dim" class="text-white">-</span></div>
                         </div>
@@ -676,6 +758,18 @@ export class ObjectInfoManager {
                 this.handleToleranceSelection(cls);
             });
         });
+
+        // CD Input Handler
+        const inputCD = document.getElementById('tol-debug-cd');
+        if (inputCD) {
+            inputCD.addEventListener('change', () => {
+                const val = parseFloat(inputCD.value);
+                if (!isNaN(val) && val > 0) {
+                    this._tolCD = val;
+                    console.log(`[ObjectInfo] User updated CD: ${val}`);
+                }
+            });
+        }
     }
 
     hideToleranceModal() {
@@ -699,32 +793,18 @@ export class ObjectInfoManager {
         this._tolCurrentObject = object;
         this._tolStandardId = standardId;
 
-        // Get Measurement Value & Type
+        // Get Measurement Value
         let dimension = 0;
-        let dimensionType = 'linear';
-
         // Logic to extract value from object
         if (object.userData.type === 'DIMENSION' || (object.parent && object.parent.userData.type === 'DIMENSION')) {
+            // value is usually stored in userData.value (e.g. 50.123)
+            // Check measurement-manager code: `dimension.userData.value = dist.toFixed(2);` It's a string?
             const dimObj = object.userData.type === 'DIMENSION' ? object : object.parent;
-
-            // Extract Subtype
-            if (dimObj.userData.subtype) {
-                dimensionType = dimObj.userData.subtype;
-            }
-
-            // Extract Numeric Value
-            const textVal = String(dimObj.userData.value);
-            // Remove non-numeric prefixes/suffixes (like 'R', 'Ø', '°') but keep decimal point
-            const match = textVal.match(/-?\d+(\.\d+)?/);
-            if (match) {
-                dimension = parseFloat(match[0]);
-            }
+            dimension = parseFloat(dimObj.userData.value);
         } else if (object.userData.type === 'LINE') {
             dimension = this.calculateLength(object);
-            dimensionType = 'linear';
         }
         this._tolDimension = dimension;
-        this._tolDimensionType = dimensionType;
 
         // Get Material and Profile Type from WeightManager
         let materialName = 'Unknown';
@@ -793,49 +873,16 @@ export class ObjectInfoManager {
 
         // Update Debug Info in Modal
         const elMat = document.getElementById('tol-debug-mat');
+        const elCD = document.getElementById('tol-debug-cd');
         const elPrf = document.getElementById('tol-debug-prf');
         const elDim = document.getElementById('tol-debug-dim');
-        if (elMat) elMat.textContent = `${materialId} [${alloyGroup}] (CD: ${cdValue.toFixed(1)})`;
+
+        if (elMat) elMat.textContent = `${materialId} [${alloyGroup}]`;
+        if (elCD) elCD.value = cdValue.toFixed(1);
         if (elPrf) elPrf.textContent = profileType.toUpperCase();
-        if (elDim) elDim.textContent = `${dimension.toFixed(2)} (${this._tolDimensionType})`;
+        if (elDim) elDim.textContent = dimension.toFixed(2);
 
-        if (elDim) elDim.textContent = `${dimension.toFixed(2)} (${this._tolDimensionType})`;
-
-        // Check if Angular -> Bypass Modal
-        if (this._tolDimensionType === 'angle') {
-            // Directly Prompt for L
-            // Wait for modal to be ready? No, we just don't show it if we hijack.
-            // But we need the context data set above.
-
-            // Allow a brief timeout or direct call?
-            // Let's hide the modal if it was somehow shown, or just not show it.
-            // Re-use logic from handleToleranceSelection or similar.
-
-            const input = prompt("Lütfen kısa kenar uzunluğunu (mm) giriniz:", "0");
-            if (input === null) {
-                // User Cancelled selection of standard
-                // We should revert standard selection?
-                this.hideToleranceModal();
-                return;
-            }
-
-            const lShort = parseFloat(input);
-            const result = calculateTolerance(this._tolStandardId, this._tolMaterialId, this._tolProfileType, this._tolDimension, null, this._tolCD, 'angle', lShort);
-
-            if (result !== null) {
-                if (this._tolCallback) {
-                    this._tolCallback(result, result);
-                }
-            } else {
-                alert("Açı toleransı hesaplanamadı.");
-            }
-
-            // Clean up
-            this.hideToleranceModal(); // Keeps things clean
-            return;
-        }
-
-        // Show (Only for Linear/Visuals that need selection)
+        // Show
         modal.classList.remove('hidden');
     }
 
@@ -862,27 +909,15 @@ export class ObjectInfoManager {
             const eVal = parseFloat(input);
 
             // Base H
-            const base = calculateTolerance(std, alloy, type, dim, 'H', cd, this._tolDimensionType);
+            const base = calculateTolerance(std, alloy, type, dim, 'H', cd);
             if (base !== null) {
                 result = calculateOpenEndTolerance(base, eVal);
             } else {
                 alert("H toleransı hesaplanamadı.");
                 return;
             }
-        } else if (this._tolDimensionType === 'angle') {
-            // For Angle, we need Short Side Length (L)
-            const input = prompt("Lütfen kısa kenar uzunluğunu (mm) giriniz:", "0");
-            if (input === null) return;
-            const lShort = parseFloat(input);
-
-            // Calculate
-            result = calculateTolerance(std, alloy, type, dim, cls, cd, 'angle', lShort);
-            if (result === null) {
-                alert("Açı toleransı hesaplanamadı.");
-                return;
-            }
         } else {
-            result = calculateTolerance(std, alloy, type, dim, cls, cd, this._tolDimensionType);
+            result = calculateTolerance(std, alloy, type, dim, cls, cd);
         }
 
         if (result !== null) {
